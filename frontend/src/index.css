@@ -1,0 +1,396 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 191 91% 40%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 191 91% 40%;
+    --radius: 1rem;
+  }
+
+  [data-theme='dark'] {
+    --background: 220 34% 9%;
+    --foreground: 210 40% 96%;
+    --card: 222 40% 12%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 40% 12%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 191 91% 55%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 222 26% 17%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 222 26% 17%;
+    --muted-foreground: 215 20% 70%;
+    --accent: 222 26% 17%;
+    --accent-foreground: 210 40% 96%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 191 91% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased text-sm;
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+
+  input,
+  select,
+  textarea {
+    @apply transition-all;
+  }
+}
+
+.erp-shell {
+  min-height: 100vh;
+}
+
+[data-theme='dark'] body {
+  background-image:
+    radial-gradient(circle at top left, rgba(34, 211, 238, 0.12), transparent 26%),
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 24%),
+    linear-gradient(180deg, #08111a 0%, #0b1220 38%, #0a1018 100%);
+}
+
+[data-theme='light'] body {
+  background-image:
+    radial-gradient(circle at top left, rgba(6, 182, 212, 0.08), transparent 24%),
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 20%),
+    linear-gradient(180deg, #f7fbff 0%, #eef5ff 45%, #f8fbfd 100%);
+}
+
+[data-theme='dark'] .erp-shell {
+  background-image:
+    radial-gradient(circle at top left, rgba(34, 211, 238, 0.08), transparent 22%),
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.08), transparent 18%),
+    linear-gradient(180deg, #08111a 0%, #0b1220 38%, #0a1018 100%);
+}
+
+[data-theme='light'] .erp-shell {
+  background-image:
+    radial-gradient(circle at top left, rgba(6, 182, 212, 0.06), transparent 22%),
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.05), transparent 18%),
+    linear-gradient(180deg, #f7fbff 0%, #eef5ff 40%, #f8fbfd 100%);
+}
+
+.page-header {
+  transition: all 0.2s ease;
+}
+
+[data-theme='dark'] .page-header {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, rgba(17, 24, 39, 0.92), rgba(8, 47, 73, 0.72));
+}
+
+[data-theme='light'] .page-header {
+  border-color: rgba(203, 213, 225, 0.85);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(241, 248, 255, 0.96));
+}
+
+[data-theme='dark'] .page-header-kicker {
+  color: rgba(103, 232, 249, 0.7);
+}
+
+[data-theme='light'] .page-header-kicker {
+  color: rgba(8, 145, 178, 0.78);
+}
+
+[data-theme='dark'] .page-header-title {
+  color: rgb(255 255 255);
+}
+
+[data-theme='light'] .page-header-title {
+  color: rgb(15 23 42);
+}
+
+[data-theme='dark'] .page-header-description {
+  color: rgb(203 213 225);
+}
+
+[data-theme='light'] .page-header-description {
+  color: rgb(71 85 105);
+}
+
+.app-card {
+  transition: all 0.2s ease;
+}
+
+.app-button {
+  transition: all 0.2s ease;
+}
+
+[data-theme='dark'] .app-button-default {
+  border-color: rgba(34, 211, 238, 0.3);
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.22), rgba(59, 130, 246, 0.28));
+  color: rgb(240 249 255);
+  box-shadow: 0 12px 30px rgba(8, 145, 178, 0.22);
+}
+
+[data-theme='dark'] .app-button-default:hover {
+  border-color: rgba(103, 232, 249, 0.4);
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.28), rgba(59, 130, 246, 0.34));
+}
+
+[data-theme='light'] .app-button-default {
+  border-color: rgb(8 145 178 / 0.9);
+  background: linear-gradient(135deg, rgb(6 182 212), rgb(37 99 235));
+  color: rgb(255 255 255);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.18);
+}
+
+[data-theme='light'] .app-button-default:hover {
+  border-color: rgb(14 116 144);
+  background: linear-gradient(135deg, rgb(8 145 178), rgb(29 78 216));
+}
+
+[data-theme='dark'] .app-button-destructive {
+  border-color: rgba(248, 113, 113, 0.25);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.24), rgba(185, 28, 28, 0.3));
+  color: rgb(254 242 242);
+  box-shadow: 0 12px 30px rgba(220, 38, 38, 0.2);
+}
+
+[data-theme='light'] .app-button-destructive {
+  border-color: rgb(220 38 38 / 0.9);
+  background: linear-gradient(135deg, rgb(239 68 68), rgb(185 28 28));
+  color: rgb(255 255 255);
+  box-shadow: 0 10px 24px rgba(220, 38, 38, 0.16);
+}
+
+[data-theme='dark'] .app-button-outline {
+  border-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 255, 255, 0.03);
+  color: rgb(226 232 240);
+}
+
+[data-theme='dark'] .app-button-outline:hover {
+  border-color: rgba(34, 211, 238, 0.2);
+  background-color: rgba(34, 211, 238, 0.1);
+  color: rgb(255 255 255);
+}
+
+[data-theme='light'] .app-button-outline {
+  border-color: rgba(148, 163, 184, 0.8);
+  background-color: rgba(255, 255, 255, 0.96);
+  color: rgb(15 23 42);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+[data-theme='light'] .app-button-outline:hover {
+  border-color: rgba(8, 145, 178, 0.45);
+  background-color: rgba(236, 254, 255, 1);
+  color: rgb(8 47 73);
+}
+
+[data-theme='dark'] .app-button-secondary {
+  border-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 255, 255, 0.05);
+  color: rgb(241 245 249);
+}
+
+[data-theme='dark'] .app-button-secondary:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme='light'] .app-button-secondary {
+  border-color: rgba(226, 232, 240, 1);
+  background-color: rgb(248 250 252);
+  color: rgb(30 41 59);
+}
+
+[data-theme='light'] .app-button-secondary:hover {
+  background-color: rgb(241 245 249);
+}
+
+[data-theme='dark'] .app-button-ghost {
+  color: rgb(203 213 225);
+}
+
+[data-theme='dark'] .app-button-ghost:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: rgb(255 255 255);
+}
+
+[data-theme='light'] .app-button-ghost {
+  color: rgb(71 85 105);
+}
+
+[data-theme='light'] .app-button-ghost:hover {
+  background-color: rgb(241 245 249);
+  color: rgb(15 23 42);
+}
+
+[data-theme='dark'] .app-button-link {
+  color: rgb(103 232 249);
+}
+
+[data-theme='dark'] .app-button-link:hover {
+  color: rgb(165 243 252);
+  text-decoration: underline;
+}
+
+[data-theme='light'] .app-button-link {
+  color: rgb(8 145 178);
+}
+
+[data-theme='light'] .app-button-link:hover {
+  color: rgb(14 116 144);
+  text-decoration: underline;
+}
+
+[data-theme='dark'] .app-card {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.72));
+}
+
+[data-theme='light'] .app-card {
+  border-color: rgba(203, 213, 225, 0.85);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.98));
+}
+
+[data-theme='dark'] .app-card-title {
+  color: rgb(248 250 252);
+}
+
+[data-theme='light'] .app-card-title {
+  color: rgb(15 23 42);
+}
+
+[data-theme='dark'] .app-card-description {
+  color: rgb(148 163 184);
+}
+
+[data-theme='light'] .app-card-description {
+  color: rgb(100 116 139);
+}
+
+[data-theme='dark'] .app-input,
+[data-theme='dark'] .erp-shell select,
+[data-theme='dark'] .erp-shell textarea {
+  background-color: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgb(226 232 240);
+}
+
+[data-theme='light'] .app-input,
+[data-theme='light'] .erp-shell select,
+[data-theme='light'] .erp-shell textarea {
+  background-color: rgba(255, 255, 255, 0.94);
+  border-color: rgba(203, 213, 225, 0.85);
+  color: rgb(15 23 42);
+}
+
+[data-theme='dark'] .erp-shell .text-slate-900,
+[data-theme='dark'] .erp-shell .text-slate-950 {
+  color: rgb(241 245 249);
+}
+
+[data-theme='light'] .erp-shell .text-slate-900,
+[data-theme='light'] .erp-shell .text-slate-950 {
+  color: rgb(15 23 42);
+}
+
+[data-theme='dark'] .erp-shell .text-slate-700,
+[data-theme='dark'] .erp-shell .text-slate-600,
+[data-theme='dark'] .erp-shell .text-slate-500,
+[data-theme='dark'] .erp-shell .text-muted-foreground {
+  color: rgb(148 163 184);
+}
+
+[data-theme='light'] .erp-shell .text-slate-700,
+[data-theme='light'] .erp-shell .text-slate-600,
+[data-theme='light'] .erp-shell .text-slate-500,
+[data-theme='light'] .erp-shell .text-muted-foreground {
+  color: rgb(100 116 139);
+}
+
+[data-theme='dark'] .erp-shell .border-slate-200,
+[data-theme='dark'] .erp-shell .border-slate-200\/80 {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme='light'] .erp-shell .border-slate-200,
+[data-theme='light'] .erp-shell .border-slate-200\/80 {
+  border-color: rgba(203, 213, 225, 0.85);
+}
+
+[data-theme='dark'] .erp-shell .bg-slate-50,
+[data-theme='dark'] .erp-shell .bg-slate-50\/70,
+[data-theme='dark'] .erp-shell .bg-white,
+[data-theme='dark'] .erp-shell .bg-white\/95 {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+[data-theme='light'] .erp-shell .bg-slate-50,
+[data-theme='light'] .erp-shell .bg-slate-50\/70,
+[data-theme='light'] .erp-shell .bg-white,
+[data-theme='light'] .erp-shell .bg-white\/95 {
+  background-color: rgba(255, 255, 255, 0.92);
+}
+
+[data-theme='dark'] .erp-shell .bg-blue-50 {
+  background-color: rgba(59, 130, 246, 0.12);
+}
+
+[data-theme='light'] .erp-shell .bg-blue-50 {
+  background-color: rgba(59, 130, 246, 0.08);
+}
+
+[data-theme='dark'] .erp-shell .bg-emerald-50 {
+  background-color: rgba(16, 185, 129, 0.12);
+}
+
+[data-theme='light'] .erp-shell .bg-emerald-50 {
+  background-color: rgba(16, 185, 129, 0.08);
+}
+
+[data-theme='dark'] .erp-shell .bg-violet-50 {
+  background-color: rgba(139, 92, 246, 0.12);
+}
+
+[data-theme='light'] .erp-shell .bg-violet-50 {
+  background-color: rgba(139, 92, 246, 0.08);
+}
+
+[data-theme='dark'] .erp-shell .bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.12);
+}
+
+[data-theme='light'] .erp-shell .bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.08);
+}
+
+[data-theme='dark'] .erp-shell .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+[data-theme='light'] .erp-shell .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.08);
+}
