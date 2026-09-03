@@ -1,15 +1,11 @@
-import { Response, NextFunction } from 'express';
+import { Request, RequestHandler } from 'express';
 import { getTenantConnection } from '../utils/tenantConnection';
 import { getBusinessAccessError } from '../utils/businessAccess';
-import { AuthRequest } from './auth';
 import { IBusiness } from '../models/master/Business';
 
-export interface TenantRequest extends AuthRequest {
-  tenantDB?: any;
-  business?: IBusiness;
-}
+export type TenantRequest = Request;
 
-export const tenantMiddleware = async (req: TenantRequest, res: Response, next: NextFunction) => {
+export const tenantMiddleware: RequestHandler = async (req, res, next) => {
   try {
     if (!req.user || !req.user.businessId) {
       return res.status(400).json({ message: 'No business associated with user' });

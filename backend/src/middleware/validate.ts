@@ -1,9 +1,9 @@
-import { NextFunction, Request, Response } from 'express';
+import { RequestHandler } from 'express';
 import { ZodError, ZodType } from 'zod';
 
 export const validate =
-  (schema: ZodType, source: 'body' | 'query' = 'body') =>
-  (req: Request, res: Response, next: NextFunction) => {
+  (schema: ZodType, source: 'body' | 'query' = 'body'): RequestHandler =>
+  (req, res, next) => {
     try {
       const parsed = schema.safeParse(source === 'query' ? req.query : req.body);
       if (!parsed.success) {

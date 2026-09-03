@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { AuthRequest } from '../middleware/auth';
+import { RequestHandler } from 'express';
 import User, { IUser } from '../models/master/User';
 import Business, { IBusiness } from '../models/master/Business';
 import { getTenantConnection } from '../utils/tenantConnection';
@@ -42,7 +42,7 @@ const generateAtlasConnectionString = (dbName: string): string => {
   return url.toString();
 };
 
-export const registerBusiness = async (req: Request, res: Response) => {
+export const registerBusiness: RequestHandler = async (req, res) => {
   try {
     const {
       businessName,
@@ -119,7 +119,7 @@ export const registerBusiness = async (req: Request, res: Response) => {
   }
 };
 
-export const login = async (req: Request, res: Response) => {
+export const login: RequestHandler = async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -152,7 +152,7 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
-export const refreshToken = async (req: Request, res: Response) => {
+export const refreshToken: RequestHandler = async (req, res) => {
   try {
     const { refreshToken } = req.body;
 
@@ -175,7 +175,7 @@ export const refreshToken = async (req: Request, res: Response) => {
   }
 };
 
-export const changePassword = async (req: AuthRequest, res: Response) => {
+export const changePassword: RequestHandler = async (req, res) => {
   try {
     const currentPassword = String(req.body?.currentPassword || '');
     const newPassword = String(req.body?.newPassword || '');

@@ -1,7 +1,6 @@
-import { Response } from 'express';
+import { RequestHandler } from 'express';
 import Business from '../models/master/Business';
 import User from '../models/master/User';
-import { AuthRequest } from '../middleware/auth';
 import { closeTenantConnection, getTenantConnection } from '../utils/tenantConnection';
 import { logAuditEvent } from '../utils/auditLogger';
 import { toPublicBusiness } from '../utils/businessAccess';
@@ -51,7 +50,7 @@ const applySubscriptionDates = (business: { subscriptionStartsAt?: Date | null; 
   }
 };
 
-export const getBusinesses = async (req: AuthRequest, res: Response) => {
+export const getBusinesses: RequestHandler = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 20));
@@ -75,7 +74,7 @@ export const getBusinesses = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const updateBusiness = async (req: AuthRequest, res: Response) => {
+export const updateBusiness: RequestHandler = async (req, res) => {
   try {
     const business = await Business.findById(req.params.id);
     if (!business) {
@@ -115,10 +114,10 @@ export const updateBusiness = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const updateBusinessStatus = async (req: AuthRequest, res: Response) => {
+export const updateBusinessStatus: RequestHandler = async (req, res) => {
   try {
-    const status = req.body.status as string;
-    if (!['active', 'inactive'].includes(status)) {
+    const status = String(req.body.status || '');
+    if (status !== 'active' && status !== 'inactive') {
       return res.status(400).json({ message: 'Status must be active or inactive' });
     }
 
@@ -149,7 +148,7 @@ export const updateBusinessStatus = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const updateBusinessSubscription = async (req: AuthRequest, res: Response) => {
+export const updateBusinessSubscription: RequestHandler = async (req, res) => {
   try {
     const business = await Business.findById(req.params.id);
     if (!business) {
@@ -186,7 +185,7 @@ export const updateBusinessSubscription = async (req: AuthRequest, res: Response
   }
 };
 
-export const deleteBusiness = async (req: AuthRequest, res: Response) => {
+export const deleteBusiness: RequestHandler = async (req, res) => {
   try {
     const business = await Business.findById(req.params.id);
     if (!business) {

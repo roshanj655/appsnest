@@ -1,14 +1,11 @@
 import jwt from 'jsonwebtoken';
-import { Request, Response, NextFunction } from 'express';
+import { Request, RequestHandler } from 'express';
 import User from '../models/master/User';
 import { resolvePermissions, type Permission } from '../constants/permissions';
 
-export interface AuthRequest extends Request {
-  user?: any;
-  permissions?: Permission[];
-}
+export type AuthRequest = Request;
 
-export const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const protect: RequestHandler = async (req, res, next) => {
   let token;
 
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -32,8 +29,8 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
   }
 };
 
-export const authorize = (...requiredPermissions: Permission[]) => {
-  return (req: AuthRequest, res: Response, next: NextFunction) => {
+export const authorize = (...requiredPermissions: Permission[]): RequestHandler => {
+  return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ message: 'Not authorized' });
     }
@@ -55,7 +52,7 @@ export const authorize = (...requiredPermissions: Permission[]) => {
   };
 };
 
-export const requireSuperAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const requireSuperAdmin: RequestHandler = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Not authorized' });
   }
