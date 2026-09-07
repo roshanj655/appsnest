@@ -5,12 +5,17 @@ import {
   updateBusinessUnit,
   deleteBusinessUnit
 } from '../controllers/businessUnitController';
+import { downloadImportSample, importFromExcel } from '../controllers/excelImportController';
 import { protect, authorize } from '../middleware/auth';
 import { tenantMiddleware } from '../middleware/tenant';
 import { validate } from '../middleware/validate';
+import { excelFile } from '../middleware/excelUpload';
 import { businessUnitSchema, businessUnitUpdateSchema } from '../schemas';
 
 const router = express.Router();
+
+router.get('/import/sample', protect, authorize('businessUnits.create'), tenantMiddleware, downloadImportSample('business-units'));
+router.post('/import', protect, authorize('businessUnits.create'), tenantMiddleware, excelFile, importFromExcel('business-units'));
 
 router.route('/')
   .get(protect, authorize('businessUnits.read'), tenantMiddleware, getBusinessUnits)

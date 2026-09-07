@@ -6,7 +6,8 @@ import {
   getInventoryReport,
   getLowStockReport,
   getProfitReport,
-  getByUnitReport
+  getByUnitReport,
+  getPurchaseHistoryReport
 } from '../controllers/reportsController';
 import { protect, authorize } from '../middleware/auth';
 import { tenantMiddleware } from '../middleware/tenant';
@@ -19,6 +20,7 @@ router.get('/purchases', protect, authorize('reports.purchases.read'), tenantMid
 router.get('/inventory', protect, authorize('reports.inventory.read'), tenantMiddleware, getInventoryReport);
 router.get('/low-stock', protect, authorize('reports.lowStock.read'), tenantMiddleware, getLowStockReport);
 router.get('/profit', protect, authorize('reports.profit.read'), tenantMiddleware, getProfitReport);
+router.get('/purchase-history', protect, authorize('reports.purchases.read'), tenantMiddleware, getPurchaseHistoryReport);
 router.get('/by-unit', protect, authorize('reports.dashboard.read'), tenantMiddleware, getByUnitReport);
 
 export default router;

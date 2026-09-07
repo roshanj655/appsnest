@@ -9,10 +9,20 @@ export interface IAttachment {
   mimetype: string;
 }
 
+export interface IPurchaseReturnItem {
+  productId: mongoose.Types.ObjectId;
+  variantId?: mongoose.Types.ObjectId;
+  quantity: number;
+  unitCost: number;
+  totalCost: number;
+}
+
 export interface IPurchaseItem extends Document {
   productId: mongoose.Schema.Types.ObjectId;
   quantity: number;
   price: number;
+  unitCost: number;
+  totalCost: number;
   discount: number;
   gst: number;
   total: number;
@@ -33,6 +43,13 @@ export interface IPurchase extends Document {
   dueAmount: number;
   attachments: IAttachment[];
   status: 'draft' | 'completed' | 'cancelled';
+  receivedAt?: Date;
+  returns: Array<{
+    items: IPurchaseReturnItem[];
+    notes?: string;
+    createdBy?: string;
+    createdAt: Date;
+  }>;
   businessUnitId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -42,6 +59,8 @@ const PurchaseItemSchema: Schema = new Schema({
   productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
   quantity: { type: Number, required: true, default: 1 },
   price: { type: Number, required: true },
+  unitCost: { type: Number, default: 0 },
+  totalCost: { type: Number, default: 0 },
   discount: { type: Number, default: 0 },
   gst: { type: Number, default: 0 },
   total: { type: Number, required: true },
@@ -70,10 +89,27 @@ const PurchaseSchema: Schema = new Schema({
   dueAmount: { type: Number, default: 0 },
   attachments: [AttachmentSchema],
   status: { type: String, enum: ['draft', 'completed', 'cancelled'], default: 'completed' },
+  receivedAt: { type: Date },
+  returns: { type: [{
+    items: [{
+      productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+      variantId: { type: mongoose.Schema.Types.ObjectId },
+      quantity: { type: Number, required: true },
+      unitCost: { type: Number, default: 0 },
+      totalCost: { type: Number, default: 0 }
+    }],
+    notes: { type: String },
+    createdBy: { type: String },
+    createdAt: { type: Date, default: Date.now }
+  }], default: [] },
   businessUnitId: { type: mongoose.Schema.Types.ObjectId, ref: 'BusinessUnit' },
 }, {
   timestamps: true
 });
+
+PurchaseSchema.index({ supplierId: 1, createdAt: -1 });
+PurchaseSchema.index({ businessUnitId: 1, createdAt: -1 });
+PurchaseSchema.index({ 'items.productId': 1, createdAt: -1 });
 
 export const getPurchaseModel = (connection: Connection) => {
   return (connection.models.Purchase as mongoose.Model<IPurchase>)

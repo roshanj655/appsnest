@@ -1,5 +1,5 @@
 import express from 'express';
-import { getInventoryTransactions } from '../controllers/inventoryTransactionController';
+import { getInventoryTransactions } from '../controllers/inventoryController';
 import { protect, authorize } from '../middleware/auth';
 import { tenantMiddleware } from '../middleware/tenant';
 

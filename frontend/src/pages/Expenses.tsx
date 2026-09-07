@@ -10,6 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { authHeaders, listItems, listParams } from '@/lib/api'
 import { BusinessUnitSelect, defaultUnitFormValue } from '@/components/BusinessUnitSelect'
+import SearchableSelect from '@/components/SearchableSelect'
+import ExcelImport from '@/components/ExcelImport'
 
 type Expense = {
   _id: string
@@ -184,6 +186,16 @@ const Expenses = () => {
             {errorMessage && (
               <div className="mb-4 rounded-xl border border-red-600/30 bg-red-50 px-4 py-3 text-sm text-red-800">{errorMessage}</div>
             )}
+            {!editingId && (
+              <div className="mb-5">
+                <ExcelImport
+                  samplePath="/api/expenses/import/sample"
+                  importPath="/api/expenses/import"
+                  fileName="expenses-import-sample.xlsx"
+                  onImported={fetchExpenses}
+                />
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <div className="space-y-2">
@@ -210,16 +222,12 @@ const Expenses = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="exp-category">Category</Label>
-                  <select
+                  <SearchableSelect
                     id="exp-category"
-                    className="app-input flex h-10 w-full rounded-xl border px-3 py-2 text-sm"
                     value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  >
-                    {categories.map((category) => (
-                      <option key={category.value} value={category.value}>{category.label}</option>
-                    ))}
-                  </select>
+                    onChange={(category) => setFormData({ ...formData, category })}
+                    options={categories.map((category) => ({ value: category.value, label: category.label }))}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="exp-date">Date</Label>

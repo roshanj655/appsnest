@@ -7,6 +7,8 @@ import { getExpenseModel } from '../models/tenant/Expense';
 import { getBusinessUnitModel } from '../models/tenant/BusinessUnit';
 import { mergeFilters, unitScope } from '../utils/businessUnit';
 import { startOfDay, endOfDay, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { stockSummaryRows } from '../services/inventoryCosting';
+import { money2 } from '../utils/money';
 
 const scoped = (req: TenantRequest, extra: Record<string, unknown> = {}) =>
   mergeFilters(extra, unitScope(req));
@@ -199,44 +201,19 @@ export const getPurchasesReport = async (req: TenantRequest, res: Response) => {
 export const getInventoryReport = async (req: TenantRequest, res: Response) => {
   try {
     const Product = getProductModel(req.tenantDB!);
-    const products = await Product.find(unitScope(req)).populate('categoryId').sort({ name: 1 });
-    const rows: any[] = [];
-    for (const product of products as any[]) {
-      if (product.variants?.length) {
-        for (const variant of product.variants) {
-          const purchasePrice = Number(variant.purchasePrice || product.purchasePrice || 0);
-          const sellingPrice = Number(variant.sellingPrice || product.sellingPrice || 0);
-          rows.push({
-            productId: product._id,
-            variantId: variant._id,
-            name: `${product.name} (${variant.name})`,
-            sku: variant.sku || product.sku,
-            categoryId: product.categoryId,
-            stock: variant.stock,
-            purchasePrice,
-            sellingPrice,
-            stockValue: variant.stock * purchasePrice,
-            sellingValue: variant.stock * sellingPrice
-          });
-        }
-      } else {
-        rows.push({
-          productId: product._id,
-          variantId: null,
-          name: product.name,
-          sku: product.sku,
-          categoryId: product.categoryId,
-          stock: product.stock,
-          purchasePrice: product.purchasePrice,
-          sellingPrice: product.sellingPrice,
-          stockValue: product.stock * product.purchasePrice,
-          sellingValue: product.stock * product.sellingPrice
-        });
-      }
-    }
-    const totalStockValue = rows.reduce((sum, row) => sum + row.stockValue, 0);
-    const totalSellingValue = rows.reduce((sum, row) => sum + row.sellingValue, 0);
-    res.json({ products: rows, totalStockValue, totalSellingValue });
+    const products = await Product.find(unitScope(req)).populate('categoryId').populate('businessUnitId').sort({ name: 1 });
+    const rows = stockSummaryRows(products).map((row) => ({
+      ...row,
+      stock: row.currentStock,
+      purchasePrice: row.lastPurchaseCost,
+      stockValue: row.inventoryValue,
+      sellingValue: Number(row.currentStock || 0) * Number(row.sellingPrice || 0),
+      categoryId: products.find((p: any) => String(p._id) === String(row.productId))?.categoryId,
+      warehouseName: (products.find((p: any) => String(p._id) === String(row.productId)) as any)?.businessUnitId?.name
+    }));
+    const totalStockValue = rows.reduce((sum, row) => sum + Number(row.stockValue || 0), 0);
+    const totalSellingValue = rows.reduce((sum, row) => sum + Number(row.sellingValue || 0), 0);
+    res.json({ products: rows, items: rows, totalStockValue, inventoryValue: totalStockValue, totalSellingValue });
   } catch (error) {
     console.error('Error fetching inventory report:', error);
     res.status(500).json({ message: 'Error fetching inventory report' });
@@ -310,11 +287,10 @@ export const getProfitReport = async (req: TenantRequest, res: Response) => {
     const totalSales = sales.reduce((sum: number, s: any) => sum + s.total, 0);
     const totalPurchases = purchases.reduce((sum: number, p: any) => sum + p.total, 0);
     const totalMiscExpenses = expenses.reduce((sum: number, e: any) => sum + e.amount, 0);
-    const totalExpenses = totalPurchases + totalMiscExpenses;
-    const grossProfit = totalSales - totalExpenses;
 
-    // Calculate per-item profit from sales
     const itemProfits: any[] = [];
+    let totalCogs = 0;
+    let totalRevenue = 0;
     for (const sale of sales) {
       for (const item of sale.items as any[]) {
         const productId = String(item.productId);
@@ -325,12 +301,10 @@ export const getProfitReport = async (req: TenantRequest, res: Response) => {
         const variant = variantId
           ? product?.variants?.find((row: any) => String(row._id) === variantId)
           : null;
-        const costEach = Number(
-          item.costPrice ??
-          variant?.purchasePrice ??
-          product?.purchasePrice ??
-          0
-        );
+        const qty = Number(item.quantity || 0);
+        const costEach = Number(item.costPerUnit ?? item.costPrice ?? 0);
+        const cogs = Number(item.cogs ?? money2(costEach * qty));
+        const revenue = Number(item.actualSoldAmount ?? item.price ?? 0) * qty;
         if (!existingItem) {
           existingItem = {
             key,
@@ -340,24 +314,38 @@ export const getProfitReport = async (req: TenantRequest, res: Response) => {
             quantity: 0,
             totalRevenue: 0,
             totalCost: 0,
-            profit: 0
+            cogs: 0,
+            profit: 0,
+            profitPercent: 0
           };
           itemProfits.push(existingItem);
         }
-        existingItem.quantity += item.quantity;
-        existingItem.totalRevenue += item.total;
-        existingItem.totalCost += costEach * item.quantity;
-        existingItem.profit = existingItem.totalRevenue - existingItem.totalCost;
+        existingItem.quantity += qty;
+        existingItem.totalRevenue += revenue;
+        existingItem.totalCost += cogs;
+        existingItem.cogs += cogs;
+        existingItem.profit = existingItem.totalRevenue - existingItem.cogs;
+        existingItem.profitPercent = existingItem.totalRevenue > 0
+          ? money2((existingItem.profit / existingItem.totalRevenue) * 100)
+          : 0;
+        totalCogs += cogs;
+        totalRevenue += revenue;
       }
     }
 
+    const grossProfit = totalRevenue - totalCogs;
+    const netProfit = grossProfit - totalMiscExpenses;
+
     res.json({
       totalSales,
+      totalRevenue,
+      totalCogs,
       totalPurchases,
       totalMiscExpenses,
-      totalExpenses,
+      totalExpenses: totalMiscExpenses,
       grossProfit,
-      profitMargin: totalSales > 0 ? ((grossProfit / totalSales) * 100) : 0,
+      netProfit,
+      profitMargin: totalRevenue > 0 ? money2((grossProfit / totalRevenue) * 100) : 0,
       itemProfits
     });
   } catch (error) {
@@ -389,7 +377,7 @@ export const getByUnitReport = async (req: TenantRequest, res: Response) => {
         { $group: { _id: '$businessUnitId', total: { $sum: '$amount' }, count: { $sum: 1 } } }
       ]),
       Product.aggregate([
-        { $group: { _id: '$businessUnitId', count: { $sum: 1 }, stockValue: { $sum: { $multiply: ['$stock', '$purchasePrice'] } } } }
+        { $group: { _id: '$businessUnitId', count: { $sum: 1 }, stockValue: { $sum: '$inventoryValue' } } }
       ])
     ]);
 
@@ -466,5 +454,48 @@ export const getByUnitReport = async (req: TenantRequest, res: Response) => {
   } catch (error) {
     console.error('Error fetching by-unit report:', error);
     res.status(500).json({ message: 'Error fetching by-unit report' });
+  }
+};
+
+export const getPurchaseHistoryReport = async (req: TenantRequest, res: Response) => {
+  try {
+    const { startDate, endDate, productId } = req.query;
+    const Purchase = getPurchaseModel(req.tenantDB!);
+    const extra: Record<string, unknown> = { status: 'completed' };
+    if (startDate && endDate) {
+      extra.createdAt = { $gte: new Date(startDate as string), $lte: new Date(endDate as string) };
+    }
+    if (productId) {
+      extra['items.productId'] = productId;
+    }
+    const purchases = await Purchase.find(scoped(req, extra))
+      .populate('supplierId')
+      .populate('items.productId')
+      .sort({ createdAt: 1 });
+
+    const lines: any[] = [];
+    for (const purchase of purchases as any[]) {
+      for (const item of purchase.items || []) {
+        if (productId && String(item.productId?._id || item.productId) !== String(productId)) continue;
+        const unitCost = Number(item.unitCost ?? item.price ?? 0);
+        const quantity = Number(item.quantity || 0);
+        lines.push({
+          date: purchase.createdAt,
+          purchaseId: purchase._id,
+          invoiceNumber: purchase.invoiceNumber,
+          supplier: purchase.supplierId?.name || '—',
+          productId: item.productId?._id || item.productId,
+          productName: item.productId?.name || 'Product',
+          variantName: item.variantName || null,
+          quantity,
+          purchaseCost: unitCost,
+          totalCost: Number(item.totalCost ?? money2(quantity * unitCost))
+        });
+      }
+    }
+    res.json({ items: lines, purchases: lines });
+  } catch (error) {
+    console.error('Error fetching purchase history:', error);
+    res.status(500).json({ message: 'Error fetching purchase history' });
   }
 };

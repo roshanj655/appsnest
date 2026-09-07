@@ -4,9 +4,10 @@ import { getPurchaseModel, IAttachment } from '../models/tenant/Purchase';
 import { getProductModel } from '../models/tenant/Product';
 import { getSettingsModel } from '../models/tenant/Settings';
 import { generateInvoicePDF, generateThermalReceipt, generateInvoicePDFBuffer } from '../services/invoiceService';
-import { applyLineStock } from '../utils/inventoryMovement';
+import { applyPurchaseLines, reversePurchaseLines, withOptionalTransaction } from '../services/inventoryCosting';
+import { money2, mulMoney } from '../utils/money';
 import { logAuditEvent } from '../utils/auditLogger';
-import { sendEmail } from '../services/emailService';
+import { sendEmail, mailerConfigFromSettings, describeMailError } from '../services/emailService';
 import path from 'path';
 import fs from 'fs';
 
@@ -63,10 +64,13 @@ export const createPurchase = async (req: TenantRequest, res: Response) => {
       if (product?.variants?.length && !variant) {
         throw Object.assign(new Error(`Pick a variant for ${product.name}.`), { status: 400 });
       }
+      const unitCost = Number(item.unitCost ?? item.price ?? 0);
       return {
         ...item,
         variantId: variant?._id || undefined,
-        variantName: variant?.name
+        variantName: variant?.name,
+        unitCost,
+        totalCost: money2(mulMoney(Number(item.quantity || 0), unitCost))
       };
     });
 
@@ -87,6 +91,7 @@ export const createPurchase = async (req: TenantRequest, res: Response) => {
     const total = Number(req.body.total || 0);
     const paidAmount = Number(req.body.paidAmount ?? total);
     const dueAmount = Math.max(0, total - paidAmount);
+    const status = req.body.status === 'draft' ? 'draft' : 'completed';
     const purchaseData = {
       ...req.body,
       invoiceNumber,
@@ -95,11 +100,22 @@ export const createPurchase = async (req: TenantRequest, res: Response) => {
       attachments,
       paidAmount,
       dueAmount,
+      status,
+      receivedAt: status === 'completed' ? new Date() : undefined,
       businessUnitId: resolveBusinessUnitId(req, req.body)
     };
-    const purchase = await Purchase.create(purchaseData);
+    const createdBy = req.user ? String((req.user as any)._id || (req.user as any).id || '') : undefined;
+    const warehouseId = purchaseData.businessUnitId ? String(purchaseData.businessUnitId) : undefined;
 
-    await applyLineStock(req.tenantDB!, items, 1, 'purchase', purchase._id.toString());
+    const purchase = await withOptionalTransaction(req.tenantDB!, async (session) => {
+      const doc = session
+        ? (await Purchase.create([purchaseData], { session }))[0]
+        : await Purchase.create(purchaseData);
+      if (status === 'completed') {
+        await applyPurchaseLines(req.tenantDB!, items, doc._id.toString(), createdBy, warehouseId, session);
+      }
+      return doc;
+    });
 
     if (req.user && req.business) {
       await logAuditEvent({
@@ -277,16 +293,6 @@ export const sendPurchaseInvoiceEmail = async (req: TenantRequest, res: Response
     
     const pdfBuffer = await generateInvoicePDFBuffer(invoiceData);
     
-    const smtpConfig = settings?.smtpHost ? {
-      host: settings.smtpHost,
-      port: settings.smtpPort,
-      secure: settings.smtpSecure,
-      auth: {
-        user: settings.smtpUser,
-        pass: settings.smtpPass
-      }
-    } : undefined;
-    
     await sendEmail({
       to,
       subject: `Purchase Invoice ${purchase.invoiceNumber} from ${settings?.businessName || 'your business'}`,
@@ -301,13 +307,13 @@ export const sendPurchaseInvoiceEmail = async (req: TenantRequest, res: Response
           content: pdfBuffer
         }
       ],
-      config: smtpConfig
+      config: mailerConfigFromSettings(settings)
     });
     
     res.json({ message: 'Purchase invoice sent successfully!' });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error sending purchase invoice email:', error);
-    res.status(500).json({ message: 'Error sending purchase invoice email' });
+    return res.status(error?.status || 400).json({ message: describeMailError(error) });
   }
 };
 
@@ -321,7 +327,13 @@ export const updatePurchase = async (req: TenantRequest, res: Response) => {
     }
 
     if (purchase.status === 'completed') {
-      await applyLineStock(req.tenantDB!, purchase.items as any[], -1, 'return', purchase._id.toString());
+      await reversePurchaseLines(
+        req.tenantDB!,
+        purchase.items as any[],
+        purchase._id.toString(),
+        req.user ? String((req.user as any)._id || '') : undefined,
+        purchase.businessUnitId ? String(purchase.businessUnitId) : undefined
+      );
     }
 
     let items = req.body.items ?? purchase.items;
@@ -352,7 +364,19 @@ export const updatePurchase = async (req: TenantRequest, res: Response) => {
     await purchase.save();
 
     if (purchase.status === 'completed') {
-      await applyLineStock(req.tenantDB!, purchase.items as any[], 1, 'purchase', purchase._id.toString());
+      const nextItems = (purchase.items as any[]).map((item: any) => ({
+        ...item,
+        unitCost: Number(item.unitCost ?? item.price ?? 0),
+        totalCost: money2(mulMoney(Number(item.quantity || 0), Number(item.unitCost ?? item.price ?? 0)))
+      }));
+      purchase.items = nextItems;
+      await applyPurchaseLines(
+        req.tenantDB!,
+        nextItems,
+        purchase._id.toString(),
+        req.user ? String((req.user as any)._id || '') : undefined,
+        purchase.businessUnitId ? String(purchase.businessUnitId) : undefined
+      );
     }
 
     if (req.user && req.business) {
@@ -384,7 +408,13 @@ export const deletePurchase = async (req: TenantRequest, res: Response) => {
     }
 
     if (purchase.status === 'completed') {
-      await applyLineStock(req.tenantDB!, purchase.items as any[], -1, 'return', purchase._id.toString());
+      await reversePurchaseLines(
+        req.tenantDB!,
+        purchase.items as any[],
+        purchase._id.toString(),
+        req.user ? String((req.user as any)._id || '') : undefined,
+        purchase.businessUnitId ? String(purchase.businessUnitId) : undefined
+      );
     }
 
     await purchase.deleteOne();
@@ -404,5 +434,101 @@ export const deletePurchase = async (req: TenantRequest, res: Response) => {
   } catch (error) {
     console.error('Error deleting purchase:', error);
     res.status(500).json({ message: 'Error deleting purchase' });
+  }
+};
+
+export const receivePurchase = async (req: TenantRequest, res: Response) => {
+  try {
+    const Purchase = getPurchaseModel(req.tenantDB!);
+    const purchase = await Purchase.findById(req.params.id);
+    if (!purchase) {
+      return res.status(404).json({ message: 'Purchase not found' });
+    }
+    if (purchase.status === 'completed') {
+      return res.status(400).json({ message: 'This purchase is already received.' });
+    }
+    if (purchase.status === 'cancelled') {
+      return res.status(400).json({ message: 'Cancelled purchases cannot be received.' });
+    }
+
+    const createdBy = req.user ? String((req.user as any)._id || '') : undefined;
+    const warehouseId = purchase.businessUnitId ? String(purchase.businessUnitId) : undefined;
+    await applyPurchaseLines(req.tenantDB!, purchase.items as any[], purchase._id.toString(), createdBy, warehouseId);
+    purchase.status = 'completed';
+    purchase.receivedAt = new Date();
+    await purchase.save();
+
+    if (req.user && req.business) {
+      await logAuditEvent({
+        user: req.user as any,
+        business: req.business,
+        action: 'UPDATE',
+        entity: 'Purchase',
+        entityId: purchase._id.toString(),
+        changes: { status: 'completed', receivedAt: purchase.receivedAt },
+        req
+      });
+    }
+    res.json(purchase);
+  } catch (error: any) {
+    return res.status(error?.status || 400).json({ message: error.message || 'Unable to receive purchase.' });
+  }
+};
+
+export const returnPurchase = async (req: TenantRequest, res: Response) => {
+  try {
+    const Purchase = getPurchaseModel(req.tenantDB!);
+    const purchase = await Purchase.findById(req.params.id);
+    if (!purchase) {
+      return res.status(404).json({ message: 'Purchase not found' });
+    }
+    if (purchase.status !== 'completed') {
+      return res.status(400).json({ message: 'Only received purchases can be returned.' });
+    }
+
+    const requested = Array.isArray(req.body?.items) ? req.body.items : purchase.items;
+    const lines = [];
+    for (const row of requested) {
+      const original = (purchase.items as any[]).find((item: any) =>
+        String(item.productId) === String(row.productId || item.productId)
+        && String(item.variantId || '') === String(row.variantId || item.variantId || '')
+      );
+      if (!original) {
+        return res.status(400).json({ message: 'Return lines must match the original purchase.' });
+      }
+      const quantity = Number(row.quantity ?? original.quantity);
+      const alreadyReturned = (purchase.returns || []).reduce((sum: number, ret: any) => {
+        const match = (ret.items || []).find((item: any) =>
+          String(item.productId) === String(original.productId)
+          && String(item.variantId || '') === String(original.variantId || '')
+        );
+        return sum + Number(match?.quantity || 0);
+      }, 0);
+      if (quantity <= 0 || alreadyReturned + quantity > Number(original.quantity)) {
+        return res.status(400).json({ message: 'Return quantity exceeds the original purchase.' });
+      }
+      const unitCost = Number(original.unitCost ?? original.price ?? 0);
+      lines.push({
+        productId: original.productId,
+        variantId: original.variantId,
+        quantity,
+        unitCost,
+        totalCost: money2(mulMoney(quantity, unitCost))
+      });
+    }
+
+    const createdBy = req.user ? String((req.user as any)._id || '') : undefined;
+    const warehouseId = purchase.businessUnitId ? String(purchase.businessUnitId) : undefined;
+    await reversePurchaseLines(req.tenantDB!, lines, purchase._id.toString(), createdBy, warehouseId);
+    purchase.returns = [...(purchase.returns || []), {
+      items: lines,
+      notes: typeof req.body?.notes === 'string' ? req.body.notes : undefined,
+      createdBy,
+      createdAt: new Date()
+    }];
+    await purchase.save();
+    res.json(purchase);
+  } catch (error: any) {
+    return res.status(error?.status || 400).json({ message: error.message || 'Unable to return purchase.' });
   }
 };

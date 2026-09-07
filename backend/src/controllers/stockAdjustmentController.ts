@@ -3,7 +3,7 @@ import { TenantRequest } from '../middleware/tenant';
 import { getProductModel } from '../models/tenant/Product';
 import { getStockAdjustmentModel, STOCK_REASONS, type StockReason } from '../models/tenant/StockAdjustment';
 import { logAuditEvent } from '../utils/auditLogger';
-import { applyStockDelta } from '../utils/inventoryMovement';
+import { applyInventoryMovement } from '../services/inventoryCosting';
 import { paginatedResult, parsePagination } from '../utils/pagination';
 import { unitScope } from '../utils/businessUnit';
 
@@ -32,6 +32,7 @@ export const createStockAdjustment = async (req: TenantRequest, res: Response) =
     const quantity = Number(req.body?.quantity);
     const reason = String(req.body?.reason || '').trim() as StockReason;
     const direction = req.body?.direction === 'out' ? 'out' : 'in';
+    const unitCost = Number(req.body?.unitCost ?? req.body?.cost ?? 0);
     const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : undefined;
 
     if (!productId) {
@@ -58,16 +59,25 @@ export const createStockAdjustment = async (req: TenantRequest, res: Response) =
     }
 
     let stockAfter = 0;
+    const transactionType =
+      reason === 'opening' ? 'OPENING'
+        : reason === 'damage' ? 'DAMAGE'
+          : reason === 'expiry' ? 'EXPIRY'
+            : 'ADJUSTMENT';
     try {
-      const updated = await applyStockDelta(req.tenantDB!, {
+      const moved = await applyInventoryMovement(req.tenantDB!, {
         productId,
         variantId: variant ? String(variant._id) : undefined,
         quantity,
         direction,
-        source: reason === 'opening' ? 'opening' : 'adjustment',
-        notes: reason
+        transactionType: transactionType as any,
+        unitCost: direction === 'in' ? unitCost : undefined,
+        referenceType: 'ADJUSTMENT',
+        notes: reason,
+        createdBy: req.user ? String((req.user as any)._id || '') : undefined,
+        warehouseId: product.businessUnitId ? String(product.businessUnitId) : undefined
       });
-      stockAfter = updated.stock;
+      stockAfter = moved.layer.quantity;
     } catch (error: any) {
       return res.status(400).json({ message: error.message || 'Unable to adjust stock.' });
     }
@@ -81,6 +91,7 @@ export const createStockAdjustment = async (req: TenantRequest, res: Response) =
       direction,
       reason,
       notes,
+      unitCost: direction === 'in' ? unitCost : undefined,
       businessUnitId: product.businessUnitId,
       status: 'active'
     });
@@ -134,15 +145,18 @@ export const updateStockAdjustment = async (req: TenantRequest, res: Response) =
 
     let stockAfter = 0;
     try {
-      const updated = await applyStockDelta(req.tenantDB!, {
+      const moved = await applyInventoryMovement(req.tenantDB!, {
         productId: String(adjustment.productId),
         variantId: adjustment.variantId ? String(adjustment.variantId) : undefined,
         quantity: adjustment.quantity,
         direction: deltaDirection,
-        source: 'adjustment',
+        transactionType: 'ADJUSTMENT',
+        unitCost: Number((adjustment as any).unitCost || 0) || undefined,
+        referenceType: 'ADJUSTMENT',
+        referenceId: String(adjustment._id),
         notes: nextStatus === 'cancelled' ? 'adjustment-cancel' : 'adjustment-restore'
       });
-      stockAfter = updated.stock;
+      stockAfter = moved.layer.quantity;
     } catch (error: any) {
       return res.status(400).json({ message: error.message || 'This change would make stock negative.' });
     }
@@ -180,12 +194,15 @@ export const deleteStockAdjustment = async (req: TenantRequest, res: Response) =
 
     if (adjustment.status === 'active') {
       try {
-        await applyStockDelta(req.tenantDB!, {
+        await applyInventoryMovement(req.tenantDB!, {
           productId: String(adjustment.productId),
           variantId: adjustment.variantId ? String(adjustment.variantId) : undefined,
           quantity: adjustment.quantity,
           direction: adjustment.direction === 'in' ? 'out' : 'in',
-          source: 'adjustment',
+          transactionType: 'ADJUSTMENT',
+          unitCost: Number((adjustment as any).unitCost || 0) || undefined,
+          referenceType: 'ADJUSTMENT',
+          referenceId: String(adjustment._id),
           notes: 'adjustment-delete'
         });
       } catch (error: any) {

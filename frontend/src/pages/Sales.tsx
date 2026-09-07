@@ -11,6 +11,7 @@ import RecordActions from '@/components/RecordActions'
 import { authHeaders, listItems, listParams } from '@/lib/api'
 import { BusinessUnitSelect, defaultUnitFormValue } from '@/components/BusinessUnitSelect'
 import { printPosReceipt } from '@/lib/print'
+import SearchableSelect, { partySelectOption, productSelectOption } from '@/components/SearchableSelect'
 
 interface FormItem {
   productId: string
@@ -37,6 +38,8 @@ const Sales = () => {
   const [showAttachmentDialog, setShowAttachmentDialog] = useState(false)
   const [selectedSale, setSelectedSale] = useState<any>(null)
   const [emailTo, setEmailTo] = useState('')
+  const [emailError, setEmailError] = useState('')
+  const [emailBusy, setEmailBusy] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [newAttachmentFiles, setNewAttachmentFiles] = useState<File[]>([])
   const [invoiceError, setInvoiceError] = useState('')
@@ -249,7 +252,7 @@ const Sales = () => {
     }
   }
 
-  const downloadInvoice = async (saleId: string, format = 'a4') => {
+  const downloadInvoice = async (saleId: string, format = 'a4', invoiceNumber?: string) => {
     setInvoiceError('')
     try {
       const response = await axios.get(`/api/sales/${saleId}/invoice`, {
@@ -262,10 +265,12 @@ const Sales = () => {
         const text = await (response.data as Blob).text()
         throw new Error(text || 'Invoice could not be generated.')
       }
+      const headerName = String(response.headers['content-disposition'] || '').match(/filename="?([^"]+)"?/i)?.[1]
+      const filename = headerName || `${invoiceNumber || 'invoice'}.pdf`
       const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
       const link = document.createElement('a')
       link.href = url
-      link.setAttribute('download', `invoice-${saleId}.pdf`)
+      link.setAttribute('download', filename)
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -309,20 +314,27 @@ const Sales = () => {
   }
 
   const sendEmail = async () => {
+    if (!selectedSale) return
+    if (!emailTo.trim() || !emailTo.includes('@')) {
+      setEmailError('Enter a valid recipient email.')
+      return
+    }
+    setEmailError('')
+    setEmailBusy(true)
     try {
       const token = localStorage.getItem('token')
       await axios.post(`/api/sales/${selectedSale._id}/email`, {
-        to: emailTo
+        to: emailTo.trim()
       }, {
         headers: { Authorization: `Bearer ${token}` }
       })
-      alert('Invoice sent successfully!')
       setShowEmailDialog(false)
       setSelectedSale(null)
       setEmailTo('')
-    } catch (err) {
-      console.error('Error sending email:', err)
-      alert('Failed to send invoice')
+    } catch (err: any) {
+      setEmailError(err.response?.data?.message || 'Failed to send invoice.')
+    } finally {
+      setEmailBusy(false)
     }
   }
 
@@ -384,17 +396,15 @@ const Sales = () => {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="customer" className="text-xs font-semibold">Customer</Label>
-                  <select
+                  <SearchableSelect
                     id="customer"
-                    className="app-input w-full h-10 px-3 border rounded-xl"
                     value={formData.customerId}
-                    onChange={(e) => setFormData({ ...formData, customerId: e.target.value })}
-                  >
-                    <option value="">Select Customer</option>
-                    {customers.map((customer: any) => (
-                      <option key={customer._id} value={customer._id}>{customer.name}</option>
-                    ))}
-                  </select>
+                    onChange={(customerId) => setFormData({ ...formData, customerId })}
+                    placeholder="Select customer"
+                    searchPlaceholder="Search name, phone, or address…"
+                    emptyLabel="Walk-in / no customer"
+                    options={customers.map(partySelectOption)}
+                  />
                 </div>
                 <BusinessUnitSelect
                   value={formData.businessUnitId}
@@ -402,18 +412,18 @@ const Sales = () => {
                 />
                 <div className="space-y-1.5">
                   <Label htmlFor="payment" className="text-xs font-semibold">Payment Mode</Label>
-                  <select
+                  <SearchableSelect
                     id="payment"
-                    className="app-input w-full h-10 px-3 border rounded-xl"
                     value={formData.paymentMode}
-                    onChange={(e) => setFormData({ ...formData, paymentMode: e.target.value })}
-                  >
-                    <option value="cash">Cash</option>
-                    <option value="card">Card</option>
-                    <option value="upi">UPI</option>
-                    <option value="bank">Bank Transfer</option>
-                    <option value="credit">Credit</option>
-                  </select>
+                    onChange={(paymentMode) => setFormData({ ...formData, paymentMode })}
+                    options={[
+                      { value: 'cash', label: 'Cash' },
+                      { value: 'card', label: 'Card' },
+                      { value: 'upi', label: 'UPI' },
+                      { value: 'bank', label: 'Bank Transfer' },
+                      { value: 'credit', label: 'Credit' }
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -486,18 +496,15 @@ const Sales = () => {
                     </Button>
                     <div className="space-y-1.5 col-span-2 md:col-span-1">
                       <Label htmlFor={`sale-product-${index}`} className="text-xs font-semibold">Product</Label>
-                      <select
+                      <SearchableSelect
                         id={`sale-product-${index}`}
-                        className="app-input h-10 w-full px-3 border rounded-xl"
                         value={item.productId}
-                        onChange={(e) => updateItem(index, 'productId', e.target.value)}
+                        onChange={(productId) => updateItem(index, 'productId', productId)}
+                        placeholder="Select product"
+                        searchPlaceholder="Search name, SKU, or barcode…"
                         required
-                      >
-                        <option value="">Select Product</option>
-                        {products.map((product: any) => (
-                          <option key={product._id} value={product._id}>{product.name} - ₹{product.sellingPrice}</option>
-                        ))}
-                      </select>
+                        options={products.map(productSelectOption)}
+                      />
                     </div>
                     {(() => {
                       const product = products.find((row: any) => row._id === item.productId)
@@ -506,20 +513,19 @@ const Sales = () => {
                       return (
                         <div className="space-y-1.5 col-span-2 md:col-span-1">
                           <Label htmlFor={`sale-variant-${index}`} className="text-xs font-semibold">Variant</Label>
-                          <select
+                          <SearchableSelect
                             id={`sale-variant-${index}`}
-                            className="app-input h-10 w-full px-3 border rounded-xl"
                             value={item.variantId}
-                            onChange={(e) => updateItem(index, 'variantId', e.target.value)}
+                            onChange={(variantId) => updateItem(index, 'variantId', variantId)}
+                            placeholder="Select variant"
                             required
-                          >
-                            <option value="">Select variant</option>
-                            {variants.map((variant: any) => (
-                              <option key={variant._id} value={variant._id}>
-                                {variant.name} · stk {variant.stock}
-                              </option>
-                            ))}
-                          </select>
+                            options={variants.map((variant: any) => ({
+                              value: String(variant._id),
+                              label: variant.name,
+                              description: `Stock ${variant.stock}${variant.sku ? ` · ${variant.sku}` : ''}`,
+                              searchText: `${variant.name} ${variant.sku || ''} ${variant.barcode || ''}`
+                            }))}
+                          />
                         </div>
                       )
                     })()}
@@ -530,7 +536,7 @@ const Sales = () => {
                         type="number"
                         min={1}
                         value={item.quantity}
-                        onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value))}
+                        onChange={(e) => updateItem(index, 'quantity', e.target.value === '' ? 0 : Number(e.target.value))}
                         required
                       />
                     </div>
@@ -546,7 +552,7 @@ const Sales = () => {
                         min={0}
                         step="0.01"
                         value={item.actualSoldAmount}
-                        onChange={(e) => updateItem(index, 'actualSoldAmount', parseFloat(e.target.value))}
+                        onChange={(e) => updateItem(index, 'actualSoldAmount', e.target.value === '' ? 0 : Number(e.target.value))}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -557,7 +563,7 @@ const Sales = () => {
                         min={0}
                         step="0.01"
                         value={item.discount}
-                        onChange={(e) => updateItem(index, 'discount', parseFloat(e.target.value))}
+                        onChange={(e) => updateItem(index, 'discount', e.target.value === '' ? 0 : Number(e.target.value))}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -568,7 +574,7 @@ const Sales = () => {
                         min={0}
                         step="0.01"
                         value={item.gst}
-                        onChange={(e) => updateItem(index, 'gst', parseFloat(e.target.value))}
+                        onChange={(e) => updateItem(index, 'gst', e.target.value === '' ? 0 : Number(e.target.value))}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -686,7 +692,7 @@ const Sales = () => {
                         <Button
                           variant="link"
                           size="sm"
-                          onClick={() => downloadInvoice(sale._id)}
+                          onClick={() => downloadInvoice(sale._id, 'a4', sale.invoiceNumber)}
                           className="text-xs p-0 h-auto"
                         >
                           Invoice (A4)
@@ -716,6 +722,7 @@ const Sales = () => {
                           onClick={() => {
                             setSelectedSale(sale)
                             setEmailTo(sale.customerId?.email || '')
+                            setEmailError('')
                             setShowEmailDialog(true)
                           }}
                           className="text-xs p-0 h-auto text-emerald-600"
@@ -764,6 +771,9 @@ const Sales = () => {
                   required
                 />
               </div>
+              {emailError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{emailError}</div>
+              )}
               <div className="flex gap-2 justify-end">
                 <Button
                   variant="secondary"
@@ -771,12 +781,13 @@ const Sales = () => {
                     setShowEmailDialog(false)
                     setSelectedSale(null)
                     setEmailTo('')
+                    setEmailError('')
                   }}
                 >
                   Cancel
                 </Button>
-                <Button onClick={sendEmail}>
-                  Send
+                <Button onClick={sendEmail} disabled={emailBusy}>
+                  {emailBusy ? 'Sending…' : 'Send'}
                 </Button>
               </div>
             </CardContent>

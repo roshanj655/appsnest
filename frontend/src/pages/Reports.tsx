@@ -49,9 +49,9 @@ const Reports = () => {
       description: 'View all sales transactions with date filtering'
     },
     {
-      title: 'Purchases Report',
-      path: '/reports/purchases',
-      description: 'Track all purchase orders and invoices'
+      title: 'Purchase History',
+      path: '/reports/purchase-history',
+      description: 'Original purchase costs, never overwritten by later receipts'
     },
     {
       title: 'Inventory Report',

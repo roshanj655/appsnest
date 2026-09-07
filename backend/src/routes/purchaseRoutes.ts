@@ -1,5 +1,7 @@
 import express from 'express';
-import { getPurchases, createPurchase, updatePurchase, deletePurchase, downloadInvoice, sendPurchaseInvoiceEmail, uploadAttachment, downloadAttachment } from '../controllers/purchaseController';
+import {
+  getPurchases, createPurchase, updatePurchase, deletePurchase, downloadInvoice, sendPurchaseInvoiceEmail, uploadAttachment, downloadAttachment, receivePurchase, returnPurchase
+} from '../controllers/purchaseController';
 import { protect, authorize } from '../middleware/auth';
 import { tenantMiddleware } from '../middleware/tenant';
 import { upload } from '../utils/upload';
@@ -11,6 +13,9 @@ const router = express.Router();
 router.route('/')
   .get(protect, authorize('purchases.read'), tenantMiddleware, getPurchases)
   .post(protect, authorize('purchases.create'), tenantMiddleware, upload.array('attachments'), validate(purchaseSchema), createPurchase);
+
+router.post('/:id/receive', protect, authorize('purchases.update'), tenantMiddleware, receivePurchase);
+router.post('/:id/return', protect, authorize('purchases.update'), tenantMiddleware, returnPurchase);
 
 router.route('/:id')
   .put(protect, authorize('purchases.update'), tenantMiddleware, validate(purchaseUpdateSchema), updatePurchase)

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { authHeaders, listItems, listParams } from '@/lib/api'
 import { defaultUnitFormValue } from '@/components/BusinessUnitSelect'
 import { printPosReceipt } from '@/lib/print'
+import SearchableSelect, { partySelectOption } from '@/components/SearchableSelect'
 
 type CartItem = {
   productId: string
@@ -262,16 +263,20 @@ const Pos = () => {
                   <p className="font-medium">{item.name}</p>
                   <p className="text-xs text-muted-foreground">{item.sku} · ₹{item.actualSoldAmount.toFixed(2)}</p>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex flex-col items-center gap-1">
+                  <Label htmlFor={`pos-qty-${cartKey(item)}`} className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Qty</Label>
+                  <div className="flex items-center gap-1">
                   <Button type="button" size="sm" variant="outline" onClick={() => setQty(cartKey(item), item.quantity - 1)}>-</Button>
                   <Input
+                    id={`pos-qty-${cartKey(item)}`}
                     className="h-9 w-16 text-center"
                     type="number"
                     min={1}
                     value={item.quantity}
-                    onChange={(e) => setQty(cartKey(item), Number(e.target.value))}
+                    onChange={(e) => setQty(cartKey(item), e.target.value === '' ? 0 : Number(e.target.value))}
                   />
                   <Button type="button" size="sm" variant="outline" onClick={() => setQty(cartKey(item), item.quantity + 1)}>+</Button>
+                  </div>
                 </div>
                 <p className="w-24 text-right font-semibold">₹{lineTotal(item).toFixed(2)}</p>
               </div>
@@ -286,39 +291,40 @@ const Pos = () => {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-1.5">
-                <Label>Customer</Label>
-                <select
-                  className="app-input h-10 w-full rounded-xl border px-3"
+                <Label htmlFor="pos-customer">Customer</Label>
+                <SearchableSelect
+                  id="pos-customer"
                   value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
-                >
-                  <option value="">Walk-in</option>
-                  {customers.map((customer: any) => (
-                    <option key={customer._id} value={customer._id}>{customer.name}</option>
-                  ))}
-                </select>
+                  onChange={setCustomerId}
+                  placeholder="Select customer"
+                  searchPlaceholder="Search name, phone, or address…"
+                  emptyLabel="Walk-in"
+                  options={customers.map(partySelectOption)}
+                />
               </div>
               <div className="space-y-1.5">
-                <Label>Payment</Label>
-                <select
-                  className="app-input h-10 w-full rounded-xl border px-3"
+                <Label htmlFor="pos-payment">Payment</Label>
+                <SearchableSelect
+                  id="pos-payment"
                   value={paymentMode}
-                  onChange={(e) => setPaymentMode(e.target.value)}
-                >
-                  <option value="cash">Cash</option>
-                  <option value="upi">UPI</option>
-                  <option value="card">Card</option>
-                  <option value="bank">Bank</option>
-                </select>
+                  onChange={setPaymentMode}
+                  options={[
+                    { value: 'cash', label: 'Cash' },
+                    { value: 'upi', label: 'UPI' },
+                    { value: 'card', label: 'Card' },
+                    { value: 'bank', label: 'Bank' }
+                  ]}
+                />
               </div>
               <div className="space-y-1.5">
-                <Label>Amount received</Label>
+                <Label htmlFor="pos-received">Amount received</Label>
                 <Input
+                  id="pos-received"
                   type="number"
                   min={0}
                   step="0.01"
                   value={paidAmount}
-                  onChange={(e) => setPaidAmount(Number(e.target.value))}
+                  onChange={(e) => setPaidAmount(e.target.value === '' ? 0 : Number(e.target.value))}
                 />
                 <p className="text-xs text-muted-foreground">
                   If this is less than the selling total, the bill is saved at the received amount.

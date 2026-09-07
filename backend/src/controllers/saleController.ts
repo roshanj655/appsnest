@@ -4,15 +4,82 @@ import { getSaleModel, IAttachment } from '../models/tenant/Sale';
 import { getProductModel } from '../models/tenant/Product';
 import { getCustomerModel } from '../models/tenant/Customer';
 import { getSettingsModel } from '../models/tenant/Settings';
-import { generateInvoicePDF, generateThermalReceipt, generateInvoicePDFBuffer } from '../services/invoiceService';
-import { applyLineStock } from '../utils/inventoryMovement';
+import { generateInvoicePDF, generateThermalReceipt, generateInvoicePDFBuffer, invoicePdfFilename } from '../services/invoiceService';
+import { applySaleLines, reverseSaleLines, withOptionalTransaction } from '../services/inventoryCosting';
+import { money2, mulMoney } from '../utils/money';
 import { logAuditEvent } from '../utils/auditLogger';
-import { sendEmail } from '../services/emailService';
+import { sendEmail, mailerConfigFromSettings, describeMailError } from '../services/emailService';
 import path from 'path';
 import fs from 'fs';
+import mongoose from 'mongoose';
 
 import { paginatedResult, parsePagination, textSearch } from '../utils/pagination';
 import { mergeFilters, resolveBusinessUnitId, unitScope } from '../utils/businessUnit';
+import { nextFyInvoiceNumber, fyInvoiceQuery } from '../utils/invoiceNumber';
+
+const partyAddress = (party: any) =>
+  [party?.address, party?.city, party?.state, party?.pincode].map((part) => String(part || '').trim()).filter(Boolean).join(', ');
+
+const sameState = (left?: string, right?: string) => {
+  const a = String(left || '').trim().toLowerCase();
+  const b = String(right || '').trim().toLowerCase();
+  return Boolean(a && b && a === b);
+};
+
+const saleInvoicePayload = (sale: any, settings: any) => {
+  const customer = sale.customerId && typeof sale.customerId === 'object' ? sale.customerId : null;
+  const dueDays = Number(settings?.invoiceDueDays || 15);
+  const dueDate = new Date(sale.createdAt);
+  dueDate.setDate(dueDate.getDate() + dueDays);
+  const interstate = Boolean(customer?.state && settings?.state && !sameState(customer.state, settings.state));
+  return {
+    invoiceNumber: sale.invoiceNumber,
+    date: sale.createdAt,
+    dueDate,
+    businessName: settings?.businessName || '',
+    businessPhone: settings?.phone || '',
+    businessEmail: settings?.email || '',
+    businessAddress: settings?.address,
+    businessCity: settings?.city,
+    businessState: settings?.state,
+    businessPincode: settings?.pincode,
+    gstin: settings?.gstin,
+    pan: settings?.pan,
+    logo: settings?.logo,
+    partyName: customer?.name,
+    partyPhone: customer?.phone,
+    partyEmail: customer?.email,
+    partyAddress: partyAddress(customer),
+    partyGstin: customer?.gstin,
+    placeOfSupply: customer?.state || settings?.state,
+    interstate,
+    items: (sale.items || []).map((item: any) => ({
+      name: item.productName || item.productId?.name || 'Product',
+      description: item.productId?.description || item.notes || '',
+      quantity: item.quantity,
+      price: item.price,
+      total: item.total,
+      hsn: item.productId?.hsn || '',
+      gst: item.gst,
+      discount: item.discount
+    })),
+    subtotal: sale.subtotal,
+    discount: sale.discount,
+    tax: sale.gst,
+    total: sale.total,
+    paymentMode: sale.paymentMode,
+    paidAmount: sale.paidAmount,
+    changeAmount: sale.changeAmount,
+    source: sale.source,
+    footerText: settings?.footerText,
+    bankName: settings?.bankName,
+    bankBranch: settings?.bankBranch,
+    bankAccountName: settings?.bankAccountName,
+    bankAccountNumber: settings?.bankAccountNumber,
+    bankIfsc: settings?.bankIfsc,
+    bankSwift: settings?.bankSwift
+  };
+};
 
 export const getSales = async (req: TenantRequest, res: Response) => {
   try {
@@ -38,12 +105,8 @@ export const createSale = async (req: TenantRequest, res: Response) => {
     // Get settings for invoice prefix
     let settings = await Settings.findOne();
     const prefix = settings?.invoicePrefix || 'INV';
-
-    // Generate invoice number
-    const lastSale = await Sale.findOne().sort({ createdAt: -1 });
-    const invoiceNumber = lastSale 
-      ? `${prefix}-${(parseInt(lastSale.invoiceNumber.split('-')[1]) + 1).toString().padStart(6, '0')}` 
-      : `${prefix}-000001`;
+    const lastInSeries = await Sale.findOne({ invoiceNumber: fyInvoiceQuery(prefix) }).sort({ invoiceNumber: -1 });
+    const invoiceNumber = nextFyInvoiceNumber(lastInSeries?.invoiceNumber, prefix);
 
     // Parse items from JSON string if needed (in case of FormData)
     let items = req.body.items;
@@ -105,7 +168,6 @@ export const createSale = async (req: TenantRequest, res: Response) => {
           variantName: variant.name,
           productName: `${product.name} (${variant.name})`,
           barcode: variant.barcode || variant.sku || product.barcode || product.sku,
-          costPrice: Number(variant.purchasePrice || product.purchasePrice || 0),
           sellingPrice: Number(item.sellingPrice ?? variant.sellingPrice ?? product.sellingPrice)
         });
       } else {
@@ -115,8 +177,7 @@ export const createSale = async (req: TenantRequest, res: Response) => {
         enrichedItems.push({
           ...item,
           productName: product.name,
-          barcode: product.barcode || product.sku,
-          costPrice: Number(product.purchasePrice || 0)
+          barcode: product.barcode || product.sku
         });
       }
     }
@@ -165,9 +226,29 @@ export const createSale = async (req: TenantRequest, res: Response) => {
     if (!saleData.customerId) {
       delete saleData.customerId;
     }
-    const sale = await Sale.create(saleData);
+    const createdBy = req.user ? String((req.user as any)._id || (req.user as any).id || '') : undefined;
+    const warehouseId = saleData.businessUnitId ? String(saleData.businessUnitId) : undefined;
+    const saleId = new mongoose.Types.ObjectId();
 
-    await applyLineStock(req.tenantDB!, items, -1, 'sale', sale._id.toString());
+    const sale = await withOptionalTransaction(req.tenantDB!, async (session) => {
+      const priced = await applySaleLines(req.tenantDB!, items, String(saleId), createdBy, warehouseId, session);
+      items = items.map((item: any, index: number) => {
+        const costPerUnit = Number(priced[index]?.costPerUnit || 0);
+        const cogs = Number(priced[index]?.cogs || money2(mulMoney(Number(item.quantity || 0), costPerUnit)));
+        const revenue = money2(Number(item.actualSoldAmount ?? item.price) * Number(item.quantity || 0));
+        return {
+          ...item,
+          costPerUnit,
+          costPrice: costPerUnit,
+          cogs,
+          grossProfit: money2(revenue - cogs)
+        };
+      });
+      const [doc] = session
+        ? await Sale.create([{ _id: saleId, ...saleData, items }], { session })
+        : [await Sale.create({ _id: saleId, ...saleData, items })];
+      return doc;
+    });
 
     if (req.user && req.business) {
       await logAuditEvent({
@@ -267,37 +348,9 @@ export const downloadInvoice = async (req: TenantRequest, res: Response) => {
     }
     
     const settings = await Settings.findOne();
-    
-    const invoiceItems = sale.items.map((item: any) => ({
-      name: item.productName || item.productId?.name || 'Product',
-      quantity: item.quantity,
-      price: item.price,
-      total: item.total
-    }));
-    
-    const customerId = sale.customerId as any;
-    const saleAny = sale as any;
-    
     const invoiceData = {
-      invoiceNumber: sale.invoiceNumber,
-      date: sale.createdAt,
-      businessName: settings?.businessName || '',
-      businessPhone: settings?.phone || '',
-      businessEmail: settings?.email || '',
-      businessAddress: settings?.address,
-      gstin: settings?.gstin,
-      partyName: customerId?.name,
-      partyPhone: customerId?.phone,
-      items: invoiceItems,
-      subtotal: sale.subtotal,
-      tax: sale.gst,
-      total: sale.total,
-      paymentMode: sale.paymentMode,
-      paidAmount: saleAny.paidAmount,
-      changeAmount: saleAny.changeAmount,
-      source: saleAny.source,
-      reprint: String(req.query.reprint || '') === '1',
-      footerText: settings?.footerText
+      ...saleInvoicePayload(sale, settings),
+      reprint: String(req.query.reprint || '') === '1'
     };
     
     const isPos = req.query.format === 'thermal' || req.query.format === 'pos';
@@ -317,53 +370,21 @@ export const downloadInvoice = async (req: TenantRequest, res: Response) => {
 
 export const sendInvoiceEmail = async (req: TenantRequest, res: Response) => {
   try {
-    const { to } = req.body;
+    const to = String(req.body?.to || '').trim();
+    if (!to || !to.includes('@')) {
+      return res.status(400).json({ message: 'Enter a valid recipient email.' });
+    }
     const Sale = getSaleModel(req.tenantDB!);
     const Settings = getSettingsModel(req.tenantDB!);
     
-    const sale = await Sale.findById(req.params.id).populate('customerId');
+    const sale = await Sale.findById(req.params.id).populate('customerId').populate('items.productId');
     if (!sale) {
       return res.status(404).json({ message: 'Sale not found' });
     }
     
     const settings = await Settings.findOne();
-    
-    // Prepare invoice data
-    const invoiceItems = sale.items.map((item: any) => ({
-      name: item.productName || 'Product',
-      quantity: item.quantity,
-      price: item.price,
-      total: item.total
-    }));
-    
-    const customerId = sale.customerId as any;
-    
-    const invoiceData = {
-      invoiceNumber: sale.invoiceNumber,
-      date: sale.createdAt,
-      businessName: settings?.businessName || '',
-      businessPhone: settings?.phone || '',
-      businessEmail: settings?.email || '',
-      businessAddress: settings?.address,
-      partyName: customerId?.name,
-      partyPhone: customerId?.phone,
-      items: invoiceItems,
-      subtotal: sale.subtotal,
-      tax: sale.gst,
-      total: sale.total
-    };
-    
+    const invoiceData = saleInvoicePayload(sale, settings);
     const pdfBuffer = await generateInvoicePDFBuffer(invoiceData);
-    
-    const smtpConfig = settings?.smtpHost ? {
-      host: settings.smtpHost,
-      port: settings.smtpPort,
-      secure: settings.smtpSecure,
-      auth: {
-        user: settings.smtpUser,
-        pass: settings.smtpPass
-      }
-    } : undefined;
     
     await sendEmail({
       to,
@@ -376,17 +397,17 @@ export const sendInvoiceEmail = async (req: TenantRequest, res: Response) => {
       `,
       attachments: [
         {
-          filename: `invoice-${sale.invoiceNumber}.pdf`,
+          filename: invoicePdfFilename(sale.invoiceNumber, 'sale'),
           content: pdfBuffer
         }
       ],
-      config: smtpConfig
+      config: mailerConfigFromSettings(settings)
     });
     
     res.json({ message: 'Invoice sent successfully!' });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error sending invoice email:', error);
-    res.status(500).json({ message: 'Error sending invoice email' });
+    return res.status(error?.status || 400).json({ message: describeMailError(error) });
   }
 };
 
@@ -400,8 +421,10 @@ export const updateSale = async (req: TenantRequest, res: Response) => {
     }
 
     const previousStatus = sale.status;
+    const createdBy = req.user ? String((req.user as any)._id || '') : undefined;
+    const warehouseId = sale.businessUnitId ? String(sale.businessUnitId) : undefined;
     if (previousStatus === 'completed') {
-      await applyLineStock(req.tenantDB!, sale.items as any[], 1, 'return', sale._id.toString());
+      await reverseSaleLines(req.tenantDB!, sale.items as any[], sale._id.toString(), createdBy, warehouseId);
     }
 
     let items = req.body.items ?? sale.items;
@@ -429,7 +452,14 @@ export const updateSale = async (req: TenantRequest, res: Response) => {
     await sale.save();
 
     if (sale.status === 'completed') {
-      await applyLineStock(req.tenantDB!, sale.items as any[], -1, 'sale', sale._id.toString());
+      const priced = await applySaleLines(req.tenantDB!, sale.items as any[], sale._id.toString(), createdBy, warehouseId);
+      sale.items = (sale.items as any[]).map((item: any, index: number) => {
+        const costPerUnit = Number(priced[index]?.costPerUnit || item.costPerUnit || item.costPrice || 0);
+        const cogs = Number(priced[index]?.cogs || money2(mulMoney(Number(item.quantity || 0), costPerUnit)));
+        const revenue = money2(Number(item.actualSoldAmount ?? item.price) * Number(item.quantity || 0));
+        return { ...item, costPerUnit, costPrice: costPerUnit, cogs, grossProfit: money2(revenue - cogs) };
+      });
+      await sale.save();
     }
 
     if (req.user && req.business) {
@@ -461,7 +491,13 @@ export const deleteSale = async (req: TenantRequest, res: Response) => {
     }
 
     if (sale.status === 'completed') {
-      await applyLineStock(req.tenantDB!, sale.items as any[], 1, 'return', sale._id.toString());
+      await reverseSaleLines(
+        req.tenantDB!,
+        sale.items as any[],
+        sale._id.toString(),
+        req.user ? String((req.user as any)._id || '') : undefined,
+        sale.businessUnitId ? String(sale.businessUnitId) : undefined
+      );
     }
 
     await sale.deleteOne();
@@ -481,5 +517,64 @@ export const deleteSale = async (req: TenantRequest, res: Response) => {
   } catch (error) {
     console.error('Error deleting sale:', error);
     res.status(500).json({ message: 'Error deleting sale' });
+  }
+};
+
+export const returnSale = async (req: TenantRequest, res: Response) => {
+  try {
+    const Sale = getSaleModel(req.tenantDB!);
+    const sale = await Sale.findById(req.params.id);
+    if (!sale) {
+      return res.status(404).json({ message: 'Sale not found' });
+    }
+    if (sale.status !== 'completed') {
+      return res.status(400).json({ message: 'Only completed sales can be returned.' });
+    }
+
+    const requested = Array.isArray(req.body?.items) ? req.body.items : sale.items;
+    const lines = [];
+    for (const row of requested) {
+      const original = (sale.items as any[]).find((item: any) =>
+        String(item.productId) === String(row.productId || item.productId)
+        && String(item.variantId || '') === String(row.variantId || item.variantId || '')
+      );
+      if (!original) {
+        return res.status(400).json({ message: 'Return lines must match the original sale.' });
+      }
+      const quantity = Number(row.quantity ?? original.quantity);
+      const alreadyReturned = (sale.returns || []).reduce((sum: number, ret: any) => {
+        const match = (ret.items || []).find((item: any) =>
+          String(item.productId) === String(original.productId)
+          && String(item.variantId || '') === String(original.variantId || '')
+        );
+        return sum + Number(match?.quantity || 0);
+      }, 0);
+      if (quantity <= 0 || alreadyReturned + quantity > Number(original.quantity)) {
+        return res.status(400).json({ message: 'Return quantity exceeds the original sale.' });
+      }
+      const costPerUnit = Number(original.costPerUnit ?? original.costPrice ?? 0);
+      lines.push({
+        productId: original.productId,
+        variantId: original.variantId,
+        quantity,
+        costPerUnit,
+        costPrice: costPerUnit,
+        cogs: money2(mulMoney(quantity, costPerUnit))
+      });
+    }
+
+    const createdBy = req.user ? String((req.user as any)._id || '') : undefined;
+    const warehouseId = sale.businessUnitId ? String(sale.businessUnitId) : undefined;
+    await reverseSaleLines(req.tenantDB!, lines, sale._id.toString(), createdBy, warehouseId);
+    sale.returns = [...(sale.returns || []), {
+      items: lines,
+      notes: typeof req.body?.notes === 'string' ? req.body.notes : undefined,
+      createdBy,
+      createdAt: new Date()
+    }];
+    await sale.save();
+    res.json(sale);
+  } catch (error: any) {
+    return res.status(error?.status || 400).json({ message: error.message || 'Unable to return sale.' });
   }
 };

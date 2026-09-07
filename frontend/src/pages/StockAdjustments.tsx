@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { authHeaders, listItems, listParams } from '@/lib/api'
+import SearchableSelect, { productSelectOption } from '@/components/SearchableSelect'
 
 type Product = {
   _id: string
@@ -36,6 +37,7 @@ const reasons = [
   { value: 'found', label: 'Stock found', direction: 'in' as const },
   { value: 'damage', label: 'Damage', direction: 'out' as const },
   { value: 'loss', label: 'Loss / shortage', direction: 'out' as const },
+  { value: 'expiry', label: 'Expiry', direction: 'out' as const },
   { value: 'return', label: 'Return / write-off', direction: 'out' as const },
   { value: 'correction', label: 'Count correction', direction: 'in' as const },
   { value: 'other', label: 'Other', direction: 'in' as const }
@@ -47,6 +49,7 @@ const emptyForm = {
   quantity: 1,
   reason: 'opening',
   direction: 'in' as 'in' | 'out',
+  unitCost: 0,
   notes: ''
 }
 
@@ -173,20 +176,15 @@ const StockAdjustments = () => {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <div className="space-y-2">
                   <Label htmlFor="adj-product">Product</Label>
-                  <select
+                  <SearchableSelect
                     id="adj-product"
-                    className="app-input flex h-10 w-full rounded-xl border px-3 py-2 text-sm"
                     value={formData.productId}
-                    onChange={(e) => setFormData({ ...formData, productId: e.target.value, variantId: '' })}
+                    onChange={(productId) => setFormData({ ...formData, productId, variantId: '' })}
+                    placeholder="Select product"
+                    searchPlaceholder="Search name or SKU…"
                     required
-                  >
-                    <option value="">Select product</option>
-                    {products.filter((product) => product).map((product) => (
-                      <option key={product._id} value={product._id}>
-                        {product.name} ({product.sku}) — stock {product.stock}
-                      </option>
-                    ))}
-                  </select>
+                    options={products.filter((product) => product).map(productSelectOption)}
+                  />
                 </div>
                 {(() => {
                   const product = products.find((row) => row._id === formData.productId)
@@ -195,47 +193,42 @@ const StockAdjustments = () => {
                   return (
                     <div className="space-y-2">
                       <Label htmlFor="adj-variant">Variant</Label>
-                      <select
+                      <SearchableSelect
                         id="adj-variant"
-                        className="app-input flex h-10 w-full rounded-xl border px-3 py-2 text-sm"
                         value={formData.variantId}
-                        onChange={(e) => setFormData({ ...formData, variantId: e.target.value })}
+                        onChange={(variantId) => setFormData({ ...formData, variantId })}
+                        placeholder="Select variant"
                         required
-                      >
-                        <option value="">Select variant</option>
-                        {variants.map((variant) => (
-                          <option key={variant._id} value={variant._id}>
-                            {variant.name} — stock {variant.stock}
-                          </option>
-                        ))}
-                      </select>
+                        options={variants.map((variant) => ({
+                          value: variant._id,
+                          label: variant.name,
+                          description: `Stock ${variant.stock}`,
+                          searchText: variant.name
+                        }))}
+                      />
                     </div>
                   )
                 })()}
                 <div className="space-y-2">
                   <Label htmlFor="adj-reason">Reason</Label>
-                  <select
+                  <SearchableSelect
                     id="adj-reason"
-                    className="app-input flex h-10 w-full rounded-xl border px-3 py-2 text-sm"
                     value={formData.reason}
-                    onChange={(e) => applyReason(e.target.value)}
-                  >
-                    {reasons.map((reason) => (
-                      <option key={reason.value} value={reason.value}>{reason.label}</option>
-                    ))}
-                  </select>
+                    onChange={applyReason}
+                    options={reasons.map((reason) => ({ value: reason.value, label: reason.label }))}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="adj-direction">Direction</Label>
-                  <select
+                  <SearchableSelect
                     id="adj-direction"
-                    className="app-input flex h-10 w-full rounded-xl border px-3 py-2 text-sm"
                     value={formData.direction}
-                    onChange={(e) => setFormData({ ...formData, direction: e.target.value as 'in' | 'out' })}
-                  >
-                    <option value="in">Stock in</option>
-                    <option value="out">Stock out</option>
-                  </select>
+                    onChange={(direction) => setFormData({ ...formData, direction: direction as 'in' | 'out' })}
+                    options={[
+                      { value: 'in', label: 'Stock in' },
+                      { value: 'out', label: 'Stock out' }
+                    ]}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="adj-qty">Quantity</Label>
@@ -248,6 +241,20 @@ const StockAdjustments = () => {
                     required
                   />
                 </div>
+                {formData.direction === 'in' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="adj-cost">Cost basis</Label>
+                    <Input
+                      id="adj-cost"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={formData.unitCost}
+                      onChange={(e) => setFormData({ ...formData, unitCost: e.target.value === '' ? 0 : Number(e.target.value) })}
+                      required
+                    />
+                  </div>
+                )}
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="adj-notes">Notes</Label>
                   <Input

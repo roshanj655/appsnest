@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button'
 import { isSuperAdmin } from '@/lib/auth'
 import { authHeaders, BUSINESS_UNIT_KEY, listItems, listParams, storedBusinessUnitId } from '@/lib/api'
 import axios from 'axios'
+import SearchableSelect from '@/components/SearchableSelect'
 
 const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -87,6 +88,7 @@ const Navbar = () => {
             { to: '/stock-adjustments', label: 'Stock Adjustments', icon: SlidersHorizontal },
             { to: '/stock-history', label: 'Stock History', icon: History },
             { to: '/inventory', label: 'Stock Value', icon: BarChart3 },
+            { to: '/reports/purchase-history', label: 'Purchase History', icon: Receipt },
             { to: '/inventory/low-stock', label: 'Low Stock', icon: Boxes }
           ]
         },
@@ -227,47 +229,41 @@ const Navbar = () => {
               </h1>
             </div>
             {!superAdmin && (
-              <select
-                aria-label="Business unit"
-                className={[
-                  'h-9 max-w-[9.5rem] rounded-xl border px-2 text-xs font-semibold lg:hidden',
-                  isLightTheme
-                    ? 'border-slate-200 bg-white text-slate-700'
-                    : 'border-white/10 bg-white/5 text-slate-100'
-                ].join(' ')}
+              <SearchableSelect
+                id="nav-unit-mobile"
                 value={selectedUnit}
-                onChange={(e) => changeUnit(e.target.value)}
-              >
-                <option value="all">All units</option>
-                {units.map((unit) => (
-                  <option key={unit._id} value={unit._id}>
-                    {unit.name}
-                  </option>
-                ))}
-              </select>
+                onChange={changeUnit}
+                className="w-[11rem] lg:hidden"
+                options={[
+                  { value: 'all', label: 'All units' },
+                  ...units.map((unit) => ({
+                    value: unit._id,
+                    label: unit.name,
+                    description: unit.code,
+                    searchText: `${unit.name} ${unit.code}`
+                  }))
+                ]}
+              />
             )}
           </div>
 
           <div className="hidden items-center gap-3 lg:flex">
             {!superAdmin && (
-              <select
-                aria-label="Business unit"
-                className={[
-                  'h-9 rounded-xl border px-3 text-xs font-semibold',
-                  isLightTheme
-                    ? 'border-slate-200 bg-white text-slate-700'
-                    : 'border-white/10 bg-white/5 text-slate-100'
-                ].join(' ')}
+              <SearchableSelect
+                id="nav-unit"
                 value={selectedUnit}
-                onChange={(e) => changeUnit(e.target.value)}
-              >
-                <option value="all">All units</option>
-                {units.map((unit) => (
-                  <option key={unit._id} value={unit._id}>
-                    {unit.name}
-                  </option>
-                ))}
-              </select>
+                onChange={changeUnit}
+                className="w-48"
+                options={[
+                  { value: 'all', label: 'All units' },
+                  ...units.map((unit) => ({
+                    value: unit._id,
+                    label: unit.name,
+                    description: unit.code,
+                    searchText: `${unit.name} ${unit.code}`
+                  }))
+                ]}
+              />
             )}
             <Button
               variant="outline"

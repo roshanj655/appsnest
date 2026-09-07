@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { authHeaders, listItems, listParams } from '@/lib/api'
+import ExcelImport from '@/components/ExcelImport'
 
 type Party = {
   _id: string
@@ -164,35 +165,45 @@ const PartyDirectory = ({ title, description, addLabel, apiPath, noun }: PartyPa
             {errorMessage && (
               <div className="mb-4 rounded-xl border border-red-600/30 bg-red-50 px-4 py-3 text-sm text-red-800">{errorMessage}</div>
             )}
+            {!editingId && (
+              <div className="mb-5">
+                <ExcelImport
+                  samplePath={`${apiPath}/import/sample`}
+                  importPath={`${apiPath}/import`}
+                  fileName={`${noun.toLowerCase()}s-import-sample.xlsx`}
+                  onImported={fetchRows}
+                />
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="space-y-2">
-                  <Label>Name</Label>
-                  <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+                  <Label htmlFor="party-name">Name</Label>
+                  <Input id="party-name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
                 </div>
                 <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+                  <Label htmlFor="party-email">Email</Label>
+                  <Input id="party-email" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Phone</Label>
-                  <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} required />
+                  <Label htmlFor="party-phone">Phone</Label>
+                  <Input id="party-phone" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} required />
                 </div>
                 <div className="space-y-2">
-                  <Label>GSTIN</Label>
-                  <Input value={formData.gstin} onChange={(e) => setFormData({ ...formData, gstin: e.target.value })} />
+                  <Label htmlFor="party-gstin">GSTIN</Label>
+                  <Input id="party-gstin" value={formData.gstin} onChange={(e) => setFormData({ ...formData, gstin: e.target.value })} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Credit Limit</Label>
-                  <Input type="number" min={0} value={formData.creditLimit} onChange={(e) => setFormData({ ...formData, creditLimit: Number(e.target.value) })} />
+                  <Label htmlFor="party-credit">Credit Limit</Label>
+                  <Input id="party-credit" type="number" min={0} value={formData.creditLimit} onChange={(e) => setFormData({ ...formData, creditLimit: e.target.value === '' ? 0 : Number(e.target.value) })} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Address</Label>
-                  <Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />
+                  <Label htmlFor="party-address">Address</Label>
+                  <Input id="party-address" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />
                 </div>
                 <div className="space-y-2 md:col-span-3">
-                  <Label>Notes</Label>
-                  <Input value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
+                  <Label htmlFor="party-notes">Notes</Label>
+                  <Input id="party-notes" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
                 </div>
               </div>
               <div className="flex justify-end gap-3">

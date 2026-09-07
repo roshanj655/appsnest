@@ -19,12 +19,12 @@ import businessRoutes from './routes/businessRoutes';
 import stockAdjustmentRoutes from './routes/stockAdjustmentRoutes';
 import expenseRoutes from './routes/expenseRoutes';
 import inventoryTransactionRoutes from './routes/inventoryTransactionRoutes';
+import inventoryRoutes from './routes/inventoryRoutes';
 import businessUnitRoutes from './routes/businessUnitRoutes';
 import { apiLimiter } from './middleware/rateLimit';
 import { errorHandler } from './middleware/errorHandler';
 
 dotenv.config();
-masterDBConnection();
 
 const app = express();
 
@@ -51,6 +51,7 @@ app.use('/api/businesses', businessRoutes);
 app.use('/api/stock-adjustments', stockAdjustmentRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/inventory-transactions', inventoryTransactionRoutes);
+app.use('/api/inventory', inventoryRoutes);
 app.use('/api/business-units', businessUnitRoutes);
 
 const clientDir = [
@@ -71,4 +72,10 @@ if (clientDir) {
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+const start = async () => {
+  await masterDBConnection();
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+};
+
+start();

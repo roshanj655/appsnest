@@ -95,7 +95,9 @@ const lineItemSchema = z.object({
   productName: optionalString,
   variantId: optionalString,
   variantName: optionalString,
-  costPrice: money.optional()
+  costPrice: money.optional(),
+  unitCost: money.optional(),
+  totalCost: money.optional()
 });
 
 const jsonItems = z.preprocess((value) => {
@@ -159,9 +161,11 @@ export const expenseUpdateSchema = expenseSchema.partial();
 
 export const stockAdjustmentSchema = z.object({
   productId: z.string().min(1),
-  quantity: z.coerce.number().int().min(1),
+  variantId: optionalString,
+  quantity: z.coerce.number().positive(),
   direction: z.enum(['in', 'out']),
-  reason: z.enum(['opening', 'found', 'damage', 'loss', 'return', 'correction', 'other']),
+  reason: z.enum(['opening', 'found', 'damage', 'loss', 'expiry', 'return', 'correction', 'other']),
+  unitCost: money.optional(),
   notes: optionalString
 });
 

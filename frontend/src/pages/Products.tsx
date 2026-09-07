@@ -10,6 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { authHeaders, listItems, listParams } from '@/lib/api'
 import { BusinessUnitSelect, defaultUnitFormValue } from '@/components/BusinessUnitSelect'
+import ExcelImport from '@/components/ExcelImport'
+import { useNavigate } from 'react-router-dom'
 
 type Product = {
   _id: string
@@ -24,6 +26,9 @@ type Product = {
   onlineVisible?: boolean
   mrp?: number
   stock: number
+  averageCost?: number
+  lastPurchaseCost?: number
+  inventoryValue?: number
   minStock?: number
   maxStock?: number
   location?: string
@@ -113,6 +118,7 @@ const emptyVariant = {
 type ConfirmKind = 'disable' | 'enable' | 'delete'
 
 const Products = () => {
+  const navigate = useNavigate()
   const [products, setProducts] = useState<Product[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -197,6 +203,18 @@ const Products = () => {
       setErrorMessage('Prices and stock cannot be negative.')
       return
     }
+    const namedVariants = formData.variants.filter((variant) => variant.name.trim())
+    if (!editingId) {
+      if (!namedVariants.length && Number(formData.stock) > 0 && Number(formData.purchasePrice) <= 0) {
+        setErrorMessage('Enter opening stock quantity and the cost per unit for that stock.')
+        return
+      }
+      const missingCost = namedVariants.find((variant) => Number(variant.stock) > 0 && Number(variant.purchasePrice) <= 0)
+      if (missingCost) {
+        setErrorMessage(`Enter opening cost for variant "${missingCost.name}" along with its opening stock.`)
+        return
+      }
+    }
     try {
       setSaving(true)
       const payload = {
@@ -262,11 +280,25 @@ const Products = () => {
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>{editingId ? 'Edit Product' : 'Add New Product'}</CardTitle>
-            <CardDescription>Create a product with clean pricing and stock values.</CardDescription>
+            <CardDescription>
+              {editingId
+                ? 'Catalog details can be edited here. Stock and cost change only through purchase, sale, or adjustment.'
+                : 'Add opening quantity and the cost you paid for that stock. Later purchases will keep this history and update the average cost.'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {errorMessage && (
               <div className="mb-4 rounded-xl border border-red-600/30 bg-red-50 px-4 py-3 text-sm text-red-800">{errorMessage}</div>
+            )}
+            {!editingId && (
+              <div className="mb-5">
+                <ExcelImport
+                  samplePath="/api/products/import/sample"
+                  importPath="/api/products/import"
+                  fileName="products-import-sample.xlsx"
+                  onImported={fetchProducts}
+                />
+              </div>
             )}
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -299,47 +331,28 @@ const Products = () => {
                   <Input id="product-location" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="product-stock">Current Stock</Label>
-                  <Input
-                    id="product-stock"
-                    type="number"
-                    min={0}
-                    value={formData.stock}
-                    onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) })}
-                    disabled={formData.variants.length > 0}
-                    required
-                  />
-                  {formData.variants.length > 0 && (
-                    <p className="text-xs text-muted-foreground">Stock is the sum of variant quantities.</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-min">Min Stock</Label>
-                  <Input id="product-min" type="number" min={0} value={formData.minStock} onChange={(e) => setFormData({ ...formData, minStock: Number(e.target.value) })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-max">Max Stock</Label>
-                  <Input id="product-max" type="number" min={0} value={formData.maxStock} onChange={(e) => setFormData({ ...formData, maxStock: Number(e.target.value) })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="purchase-price">Purchase Price</Label>
-                  <Input id="purchase-price" type="number" min={0} step="0.01" value={formData.purchasePrice} onChange={(e) => setFormData({ ...formData, purchasePrice: Number(e.target.value) })} required />
-                </div>
-                <div className="space-y-2">
                   <Label htmlFor="selling-price">Selling Price</Label>
-                  <Input id="selling-price" type="number" min={0} step="0.01" value={formData.sellingPrice} onChange={(e) => setFormData({ ...formData, sellingPrice: Number(e.target.value) })} required />
+                  <Input id="selling-price" type="number" min={0} step="0.01" value={formData.sellingPrice} onChange={(e) => setFormData({ ...formData, sellingPrice: e.target.value === '' ? 0 : Number(e.target.value) })} required />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="product-mrp">MRP</Label>
-                  <Input id="product-mrp" type="number" min={0} step="0.01" value={formData.mrp} onChange={(e) => setFormData({ ...formData, mrp: Number(e.target.value) })} />
+                  <Input id="product-mrp" type="number" min={0} step="0.01" value={formData.mrp} onChange={(e) => setFormData({ ...formData, mrp: e.target.value === '' ? 0 : Number(e.target.value) })} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="online-price">Online Price</Label>
-                  <Input id="online-price" type="number" min={0} step="0.01" value={formData.onlinePrice} onChange={(e) => setFormData({ ...formData, onlinePrice: Number(e.target.value) })} />
+                  <Input id="online-price" type="number" min={0} step="0.01" value={formData.onlinePrice} onChange={(e) => setFormData({ ...formData, onlinePrice: e.target.value === '' ? 0 : Number(e.target.value) })} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="product-gst">GST %</Label>
-                  <Input id="product-gst" type="number" min={0} step="0.01" value={formData.gst} onChange={(e) => setFormData({ ...formData, gst: Number(e.target.value) })} />
+                  <Input id="product-gst" type="number" min={0} step="0.01" value={formData.gst} onChange={(e) => setFormData({ ...formData, gst: e.target.value === '' ? 0 : Number(e.target.value) })} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-min">Min Stock</Label>
+                  <Input id="product-min" type="number" min={0} value={formData.minStock} onChange={(e) => setFormData({ ...formData, minStock: e.target.value === '' ? 0 : Number(e.target.value) })} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-max">Max Stock</Label>
+                  <Input id="product-max" type="number" min={0} value={formData.maxStock} onChange={(e) => setFormData({ ...formData, maxStock: e.target.value === '' ? 0 : Number(e.target.value) })} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="product-hsn">HSN</Label>
@@ -353,6 +366,70 @@ const Products = () => {
                   <Label htmlFor="product-notes">Notes</Label>
                   <Input id="product-notes" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
                 </div>
+                {!editingId && formData.variants.length === 0 && (
+                  <div className="md:col-span-3 space-y-3 rounded-2xl border border-cyan-400/30 bg-cyan-50/60 p-4">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-900">Opening stock</h4>
+                      <p className="text-xs text-muted-foreground">
+                        Enter how many units you already have and what you paid per unit. Example: 100 units at ₹95.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="product-stock">Opening quantity</Label>
+                        <Input
+                          id="product-stock"
+                          type="number"
+                          min={0}
+                          value={formData.stock}
+                          onChange={(e) => setFormData({ ...formData, stock: e.target.value === '' ? 0 : Number(e.target.value) })}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="purchase-price">Cost per unit</Label>
+                        <Input
+                          id="purchase-price"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={formData.purchasePrice}
+                          onChange={(e) => setFormData({ ...formData, purchasePrice: e.target.value === '' ? 0 : Number(e.target.value) })}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Opening value</Label>
+                        <div className="flex h-10 items-center rounded-xl border bg-white px-3 text-sm font-semibold">
+                          ₹{(Number(formData.stock || 0) * Number(formData.purchasePrice || 0)).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {editingId && (
+                  <div className="md:col-span-3 grid grid-cols-1 gap-3 rounded-xl border bg-slate-50 p-3 md:grid-cols-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Current stock</p>
+                      <p className="font-semibold">{Number(products.find((row) => row._id === editingId)?.stock || 0)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Average cost</p>
+                      <p className="font-semibold">₹{Number(products.find((row) => row._id === editingId)?.averageCost || 0).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Last purchase cost</p>
+                      <p className="font-semibold">₹{Number(products.find((row) => row._id === editingId)?.lastPurchaseCost || formData.purchasePrice || 0).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Inventory value</p>
+                      <p className="font-semibold">₹{Number(products.find((row) => row._id === editingId)?.inventoryValue || 0).toFixed(2)}</p>
+                    </div>
+                    <p className="md:col-span-4 text-xs text-muted-foreground">
+                      To add more stock with a new price, create a purchase. Do not edit stock here.
+                    </p>
+                  </div>
+                )}
                 <label className="flex items-center gap-2 text-sm md:col-span-3">
                   <input
                     type="checkbox"
@@ -379,97 +456,127 @@ const Products = () => {
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Each variant has its own SKU, barcode, prices, and stock. Sales, POS, purchases, and profit use the variant you pick or scan.
+                    {editingId
+                      ? 'Existing variant stock cannot be typed here. Add stock with a purchase. New variants can still get opening quantity and cost.'
+                      : 'For each variant, enter opening quantity and the cost you paid for that stock.'}
                   </p>
                   {formData.variants.map((variant, index) => (
                     <div key={variant._id || index} className="grid grid-cols-2 gap-2 rounded-xl border p-3 md:grid-cols-7">
-                      <Input
-                        placeholder="Name"
-                        value={variant.name}
-                        onChange={(e) => {
-                          const variants = [...formData.variants]
-                          variants[index] = { ...variants[index], name: e.target.value }
-                          setFormData({ ...formData, variants })
-                        }}
-                      />
-                      <Input
-                        placeholder="SKU"
-                        value={variant.sku}
-                        onChange={(e) => {
-                          const variants = [...formData.variants]
-                          variants[index] = { ...variants[index], sku: e.target.value }
-                          setFormData({ ...formData, variants })
-                        }}
-                      />
-                      <Input
-                        placeholder="Barcode"
-                        value={variant.barcode}
-                        onChange={(e) => {
-                          const variants = [...formData.variants]
-                          variants[index] = { ...variants[index], barcode: e.target.value }
-                          setFormData({ ...formData, variants })
-                        }}
-                      />
-                      <Input
-                        placeholder="Size / color"
-                        value={variant.attributes}
-                        onChange={(e) => {
-                          const variants = [...formData.variants]
-                          variants[index] = { ...variants[index], attributes: e.target.value }
-                          setFormData({ ...formData, variants })
-                        }}
-                      />
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        placeholder="Cost"
-                        value={variant.purchasePrice}
-                        onChange={(e) => {
-                          const variants = [...formData.variants]
-                          variants[index] = { ...variants[index], purchasePrice: Number(e.target.value) }
-                          setFormData({ ...formData, variants })
-                        }}
-                      />
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        placeholder="Sell"
-                        value={variant.sellingPrice}
-                        onChange={(e) => {
-                          const variants = [...formData.variants]
-                          variants[index] = { ...variants[index], sellingPrice: Number(e.target.value) }
-                          setFormData({ ...formData, variants })
-                        }}
-                      />
-                      <div className="flex gap-2">
+                      <div className="space-y-1">
+                        <Label htmlFor={`variant-name-${index}`} className="text-xs">Name</Label>
                         <Input
-                          type="number"
-                          min={0}
-                          placeholder="Stock"
-                          value={variant.stock}
+                          id={`variant-name-${index}`}
+                          placeholder="Name"
+                          value={variant.name}
                           onChange={(e) => {
                             const variants = [...formData.variants]
-                            variants[index] = { ...variants[index], stock: Number(e.target.value) }
-                            const stock = variants.reduce((sum, row) => sum + Number(row.stock || 0), 0)
-                            setFormData({ ...formData, variants, stock })
+                            variants[index] = { ...variants[index], name: e.target.value }
+                            setFormData({ ...formData, variants })
                           }}
                         />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="px-2 text-red-600"
-                          onClick={() => {
-                            const variants = formData.variants.filter((_, i) => i !== index)
-                            const stock = variants.length
-                              ? variants.reduce((sum, row) => sum + Number(row.stock || 0), 0)
-                              : formData.stock
-                            setFormData({ ...formData, variants, stock })
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`variant-sku-${index}`} className="text-xs">SKU</Label>
+                        <Input
+                          id={`variant-sku-${index}`}
+                          placeholder="SKU"
+                          value={variant.sku}
+                          onChange={(e) => {
+                            const variants = [...formData.variants]
+                            variants[index] = { ...variants[index], sku: e.target.value }
+                            setFormData({ ...formData, variants })
                           }}
-                        >
-                          ×
-                        </Button>
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`variant-barcode-${index}`} className="text-xs">Barcode</Label>
+                        <Input
+                          id={`variant-barcode-${index}`}
+                          placeholder="Barcode"
+                          value={variant.barcode}
+                          onChange={(e) => {
+                            const variants = [...formData.variants]
+                            variants[index] = { ...variants[index], barcode: e.target.value }
+                            setFormData({ ...formData, variants })
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`variant-attr-${index}`} className="text-xs">Size / color</Label>
+                        <Input
+                          id={`variant-attr-${index}`}
+                          placeholder="Size / color"
+                          value={variant.attributes}
+                          onChange={(e) => {
+                            const variants = [...formData.variants]
+                            variants[index] = { ...variants[index], attributes: e.target.value }
+                            setFormData({ ...formData, variants })
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`variant-cost-${index}`} className="text-xs">Opening cost</Label>
+                        <Input
+                          id={`variant-cost-${index}`}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          placeholder="Cost"
+                          value={variant.purchasePrice}
+                          onChange={(e) => {
+                            const variants = [...formData.variants]
+                            variants[index] = { ...variants[index], purchasePrice: e.target.value === '' ? 0 : Number(e.target.value) }
+                            setFormData({ ...formData, variants })
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`variant-sell-${index}`} className="text-xs">Selling price</Label>
+                        <Input
+                          id={`variant-sell-${index}`}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          placeholder="Sell"
+                          value={variant.sellingPrice}
+                          onChange={(e) => {
+                            const variants = [...formData.variants]
+                            variants[index] = { ...variants[index], sellingPrice: e.target.value === '' ? 0 : Number(e.target.value) }
+                            setFormData({ ...formData, variants })
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`variant-stock-${index}`} className="text-xs">Opening stock</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id={`variant-stock-${index}`}
+                            type="number"
+                            min={0}
+                            placeholder="Stock"
+                            value={variant.stock}
+                            onChange={(e) => {
+                              const variants = [...formData.variants]
+                              variants[index] = { ...variants[index], stock: e.target.value === '' ? 0 : Number(e.target.value) }
+                              const stock = variants.reduce((sum, row) => sum + Number(row.stock || 0), 0)
+                              setFormData({ ...formData, variants, stock })
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="px-2 text-red-600"
+                            onClick={() => {
+                              const variants = formData.variants.filter((_, i) => i !== index)
+                              const stock = variants.length
+                                ? variants.reduce((sum, row) => sum + Number(row.stock || 0), 0)
+                                : formData.stock
+                              setFormData({ ...formData, variants, stock })
+                            }}
+                          >
+                            ×
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -495,9 +602,11 @@ const Products = () => {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>SKU</TableHead>
-                <TableHead>Purchase Price</TableHead>
+                <TableHead>Last purchase</TableHead>
+                <TableHead>Avg cost</TableHead>
                 <TableHead>Selling Price</TableHead>
                 <TableHead>Stock</TableHead>
+                <TableHead>Value</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -507,7 +616,8 @@ const Products = () => {
                 <TableRow key={product._id}>
                   <TableCell className="font-medium text-foreground">{product.name}</TableCell>
                   <TableCell>{product.sku}</TableCell>
-                  <TableCell>₹{product.purchasePrice}</TableCell>
+                  <TableCell>₹{Number(product.lastPurchaseCost ?? product.purchasePrice).toFixed(2)}</TableCell>
+                  <TableCell>₹{Number(product.averageCost ?? product.purchasePrice).toFixed(2)}</TableCell>
                   <TableCell>₹{product.sellingPrice}</TableCell>
                   <TableCell className={product.stock <= 10 ? 'font-semibold text-red-700' : 'font-semibold text-emerald-700'}>
                     {product.stock}
@@ -515,8 +625,13 @@ const Products = () => {
                       <span className="ml-1 text-xs font-normal text-muted-foreground">({product.variants.length} variants)</span>
                     ) : null}
                   </TableCell>
+                  <TableCell>₹{Number(product.inventoryValue ?? product.stock * (product.averageCost ?? product.purchasePrice)).toFixed(2)}</TableCell>
                   <TableCell className="capitalize">{product.status || 'active'}</TableCell>
                   <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => navigate(`/stock-history?productId=${product._id}`)}>
+                        History
+                      </Button>
                     <RecordActions
                       isActive={product.status !== 'inactive'}
                       onEdit={() => openEdit(product)}
@@ -529,6 +644,7 @@ const Products = () => {
                         setConfirmKind('delete')
                       }}
                     />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import SearchableSelect from '@/components/SearchableSelect'
 
 const Settings = () => {
   const [settings, setSettings] = useState<Record<string, any> | null>(null)
@@ -37,7 +38,7 @@ const Settings = () => {
     const { name, value, type } = e.target
     setSettings((prev) => ({
       ...(prev || {}),
-      [name]: type === 'number' ? parseInt(value) : type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
+      [name]: type === 'number' ? (value === '' ? 0 : Number(value)) : type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
     }))
   }
 
@@ -120,6 +121,10 @@ const Settings = () => {
                   <Label htmlFor="gstin">GSTIN</Label>
                   <Input id="gstin" type="text" name="gstin" value={settings?.gstin || ''} onChange={handleChange} />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pan">PAN</Label>
+                  <Input id="pan" type="text" name="pan" value={settings?.pan || ''} onChange={handleChange} />
+                </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="address">Address</Label>
                   <Input id="address" type="text" name="address" value={settings?.address || ''} onChange={handleChange} />
@@ -152,6 +157,11 @@ const Settings = () => {
                 <div className="space-y-2">
                   <Label htmlFor="invoicePrefix">Sales Invoice Prefix</Label>
                   <Input id="invoicePrefix" type="text" name="invoicePrefix" value={settings?.invoicePrefix || 'INV'} onChange={handleChange} />
+                  <p className="text-xs text-muted-foreground">New sales use PREFIX/FY/000001, for example INV/25-26/000001. The PDF file is INV_25-26_000001.pdf.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="invoiceDueDays">Invoice due days</Label>
+                  <Input id="invoiceDueDays" type="number" min={0} name="invoiceDueDays" value={settings?.invoiceDueDays ?? 15} onChange={handleChange} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="purchaseInvoicePrefix">Purchase Invoice Prefix</Label>
@@ -159,31 +169,31 @@ const Settings = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="thermalPrinterWidth">Thermal Printer Width (mm)</Label>
-                  <select
+                  <SearchableSelect
                     id="thermalPrinterWidth"
                     name="thermalPrinterWidth"
-                    value={settings?.thermalPrinterWidth || 58}
-                    onChange={handleChange}
-                    className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm"
-                  >
-                    <option value={58}>58 mm</option>
-                    <option value={80}>80 mm</option>
-                  </select>
+                    value={String(settings?.thermalPrinterWidth || 58)}
+                    onChange={(value) => setSettings((prev) => ({ ...(prev || {}), thermalPrinterWidth: Number(value) }))}
+                    options={[
+                      { value: '58', label: '58 mm' },
+                      { value: '80', label: '80 mm' }
+                    ]}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="currency">Currency</Label>
-                  <select
+                  <SearchableSelect
                     id="currency"
                     name="currency"
                     value={settings?.currency || 'INR'}
-                    onChange={handleChange}
-                    className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm"
-                  >
-                    <option value="INR">INR (₹)</option>
-                    <option value="USD">USD ($)</option>
-                    <option value="EUR">EUR (€)</option>
-                    <option value="GBP">GBP (£)</option>
-                  </select>
+                    onChange={(value) => setSettings((prev) => ({ ...(prev || {}), currency: value }))}
+                    options={[
+                      { value: 'INR', label: 'INR (₹)' },
+                      { value: 'USD', label: 'USD ($)' },
+                      { value: 'EUR', label: 'EUR (€)' },
+                      { value: 'GBP', label: 'GBP (£)' }
+                    ]}
+                  />
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="footerText">Footer Text</Label>
@@ -199,6 +209,77 @@ const Settings = () => {
                     className="h-4 w-4 rounded border-slate-300"
                   />
                   Enable tax calculation
+                </label>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 pt-8">
+              <div className="mb-6">
+                <CardTitle>Bank details (invoice)</CardTitle>
+                <CardDescription className="mt-1">Printed on the sales tax invoice, same layout as billed invoices.</CardDescription>
+              </div>
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="bankName">Bank name</Label>
+                  <Input id="bankName" name="bankName" value={settings?.bankName || ''} onChange={handleChange} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bankBranch">Branch</Label>
+                  <Input id="bankBranch" name="bankBranch" value={settings?.bankBranch || ''} onChange={handleChange} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bankAccountName">Account name</Label>
+                  <Input id="bankAccountName" name="bankAccountName" value={settings?.bankAccountName || ''} onChange={handleChange} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bankAccountNumber">Account number</Label>
+                  <Input id="bankAccountNumber" name="bankAccountNumber" value={settings?.bankAccountNumber || ''} onChange={handleChange} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bankIfsc">IFSC</Label>
+                  <Input id="bankIfsc" name="bankIfsc" value={settings?.bankIfsc || ''} onChange={handleChange} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bankSwift">Swift code</Label>
+                  <Input id="bankSwift" name="bankSwift" value={settings?.bankSwift || ''} onChange={handleChange} />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 pt-8">
+              <div className="mb-6">
+                <CardTitle>Email (send invoice)</CardTitle>
+                <CardDescription className="mt-1">
+                  Gmail needs an App Password, not your normal password. Turn on 2-Step Verification, then create an app password and paste it here.
+                </CardDescription>
+              </div>
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="smtpHost">SMTP host</Label>
+                  <Input id="smtpHost" name="smtpHost" value={settings?.smtpHost || ''} onChange={handleChange} placeholder="smtp.gmail.com" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="smtpPort">SMTP port</Label>
+                  <Input id="smtpPort" type="number" name="smtpPort" value={settings?.smtpPort || 587} onChange={handleChange} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="smtpUser">SMTP user (Gmail address)</Label>
+                  <Input id="smtpUser" name="smtpUser" value={settings?.smtpUser || ''} onChange={handleChange} placeholder="you@gmail.com" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="smtpPass">SMTP app password</Label>
+                  <Input id="smtpPass" type="password" name="smtpPass" value={settings?.smtpPass || ''} onChange={handleChange} placeholder="16-character app password" />
+                </div>
+                <label htmlFor="smtpSecure" className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 md:col-span-2">
+                  <input
+                    type="checkbox"
+                    id="smtpSecure"
+                    name="smtpSecure"
+                    checked={Boolean(settings?.smtpSecure)}
+                    onChange={handleChange}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  Use SSL (port 465). Leave off for Gmail port 587.
                 </label>
               </div>
             </div>

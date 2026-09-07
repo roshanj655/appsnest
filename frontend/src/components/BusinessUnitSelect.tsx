@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { Label } from '@/components/ui/label'
 import { authHeaders, listItems, listParams, storedBusinessUnitId } from '@/lib/api'
+import SearchableSelect from '@/components/SearchableSelect'
 
 type Unit = { _id: string; name: string; code: string; status?: string }
 
@@ -36,19 +37,19 @@ export const BusinessUnitSelect = ({
       <Label htmlFor={id} className="text-xs font-semibold">
         {label}
       </Label>
-      <select
+      <SearchableSelect
         id={id}
-        className="app-input h-10 w-full rounded-xl border px-3 text-sm"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {allowUnassigned && <option value="">Unassigned</option>}
-        {units.map((unit) => (
-          <option key={unit._id} value={unit._id}>
-            {unit.name} ({unit.code})
-          </option>
-        ))}
-      </select>
+        onChange={onChange}
+        emptyLabel={allowUnassigned ? 'Unassigned' : undefined}
+        placeholder="Select business unit"
+        searchPlaceholder="Search unit name or code…"
+        options={units.map((unit) => ({
+          value: unit._id,
+          label: `${unit.name} (${unit.code})`,
+          searchText: `${unit.name} ${unit.code}`
+        }))}
+      />
     </div>
   )
 }

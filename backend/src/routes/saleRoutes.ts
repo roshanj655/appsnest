@@ -1,5 +1,5 @@
 import express from 'express';
-import { getSales, createSale, updateSale, deleteSale, downloadInvoice, sendInvoiceEmail, uploadAttachment, downloadAttachment } from '../controllers/saleController';
+import { getSales, createSale, updateSale, deleteSale, downloadInvoice, sendInvoiceEmail, uploadAttachment, downloadAttachment, returnSale } from '../controllers/saleController';
 import { protect, authorize } from '../middleware/auth';
 import { tenantMiddleware } from '../middleware/tenant';
 import { upload } from '../utils/upload';
@@ -11,6 +11,8 @@ const router = express.Router();
 router.route('/')
   .get(protect, authorize('sales.read'), tenantMiddleware, getSales)
   .post(protect, authorize('sales.create'), tenantMiddleware, upload.array('attachments'), validate(saleSchema), createSale);
+
+router.post('/:id/return', protect, authorize('sales.update'), tenantMiddleware, returnSale);
 
 router.route('/:id')
   .put(protect, authorize('sales.update'), tenantMiddleware, validate(saleUpdateSchema), updateSale)

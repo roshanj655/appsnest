@@ -69,48 +69,40 @@ const InventoryReport = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>
+                  <TableHead>Variant</TableHead>
+                  <TableHead>Warehouse</TableHead>
                   <TableHead>SKU</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Stock</TableHead>
-                  <TableHead>Purchase Price</TableHead>
-                  <TableHead>Selling Price</TableHead>
-                  <TableHead>Stock Value</TableHead>
+                  <TableHead>Current stock</TableHead>
+                  <TableHead>Average cost</TableHead>
+                  <TableHead>Last purchase cost</TableHead>
+                  <TableHead>Inventory value</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {products.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                      <TableCell colSpan={8} className="h-24 text-center">
                       No products in inventory
                     </TableCell>
                   </TableRow>
                 ) : (
                   products.map((product: any) => (
-                    <TableRow key={product.variantId ? `${product.productId}:${product.variantId}` : product._id}>
-                      <TableCell className="font-medium">
-                        {product.name}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {product.sku}
-                      </TableCell>
-                      <TableCell>
-                        {product.categoryId ? product.categoryId.name : 'Uncategorized'}
-                      </TableCell>
+                    <TableRow key={product.variantId ? `${product.productId}:${product.variantId}` : product.productId || product._id}>
+                      <TableCell className="font-medium">{product.name}</TableCell>
+                      <TableCell>{product.variantName || '—'}</TableCell>
+                      <TableCell>{product.warehouseName || '—'}</TableCell>
+                      <TableCell className="text-muted-foreground">{product.sku}</TableCell>
                       <TableCell>
                         <span className={`font-semibold ${
-                          product.stock <= 10 ? 'text-destructive' : 'text-foreground'
+                          Number(product.currentStock ?? product.stock) <= 10 ? 'text-destructive' : 'text-foreground'
                         }`}>
-                          {product.stock}
+                          {product.currentStock ?? product.stock}
                         </span>
                       </TableCell>
-                      <TableCell>
-                        ₹{product.purchasePrice.toFixed(2)}
-                      </TableCell>
-                      <TableCell>
-                        ₹{product.sellingPrice.toFixed(2)}
-                      </TableCell>
+                      <TableCell>₹{Number(product.averageCost ?? 0).toFixed(2)}</TableCell>
+                      <TableCell>₹{Number(product.lastPurchaseCost ?? product.purchasePrice ?? 0).toFixed(2)}</TableCell>
                       <TableCell className="font-semibold">
-                        ₹{(product.stock * product.purchasePrice).toFixed(2)}
+                        ₹{Number(product.inventoryValue ?? product.stockValue ?? 0).toFixed(2)}
                       </TableCell>
                     </TableRow>
                   ))

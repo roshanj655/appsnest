@@ -10,14 +10,22 @@ export interface ISettings extends Document {
   country?: string;
   pincode?: string;
   gstin?: string;
+  pan?: string;
   currency: string;
   currencySymbol: string;
   invoicePrefix: string;
   purchaseInvoicePrefix: string;
+  invoiceDueDays: number;
   thermalPrinterWidth: number;
   footerText?: string;
   logo?: string;
   taxEnabled: boolean;
+  bankName?: string;
+  bankBranch?: string;
+  bankAccountName?: string;
+  bankAccountNumber?: string;
+  bankIfsc?: string;
+  bankSwift?: string;
   smtpHost?: string;
   smtpPort?: number;
   smtpSecure?: boolean;
@@ -37,14 +45,22 @@ const SettingsSchema: Schema = new Schema({
   country: { type: String, default: 'India' },
   pincode: { type: String },
   gstin: { type: String },
+  pan: { type: String },
   currency: { type: String, default: 'INR' },
   currencySymbol: { type: String, default: '₹' },
   invoicePrefix: { type: String, default: 'INV' },
   purchaseInvoicePrefix: { type: String, default: 'PUR' },
+  invoiceDueDays: { type: Number, default: 15 },
   thermalPrinterWidth: { type: Number, default: 58 },
   footerText: { type: String },
   logo: { type: String },
   taxEnabled: { type: Boolean, default: true },
+  bankName: { type: String },
+  bankBranch: { type: String },
+  bankAccountName: { type: String },
+  bankAccountNumber: { type: String },
+  bankIfsc: { type: String },
+  bankSwift: { type: String },
   smtpHost: { type: String },
   smtpPort: { type: Number },
   smtpSecure: { type: Boolean },

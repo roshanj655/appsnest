@@ -59,7 +59,7 @@ const LowStockReport = () => {
                 id="threshold"
                 type="number"
                 value={threshold}
-                onChange={(e) => setThreshold(parseInt(e.target.value) || 10)}
+                onChange={(e) => setThreshold(e.target.value === '' ? 0 : Number(e.target.value))}
                 min="0"
                 className="w-32"
               />

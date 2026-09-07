@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { authHeaders, listItems, listParams } from '@/lib/api'
+import ExcelImport from '@/components/ExcelImport'
 
 type BusinessUnit = {
   _id: string
@@ -144,6 +145,16 @@ const BusinessUnits = () => {
           <CardContent>
             {errorMessage && (
               <div className="mb-4 rounded-xl border border-red-600/30 bg-red-50 px-4 py-3 text-sm text-red-800">{errorMessage}</div>
+            )}
+            {!editingId && (
+              <div className="mb-5">
+                <ExcelImport
+                  samplePath="/api/business-units/import/sample"
+                  importPath="/api/business-units/import"
+                  fileName="business-units-import-sample.xlsx"
+                  onImported={fetchUnits}
+                />
+              </div>
             )}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

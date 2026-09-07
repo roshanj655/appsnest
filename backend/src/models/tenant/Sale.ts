@@ -14,6 +14,9 @@ export interface ISaleItem extends Document {
   variantId?: mongoose.Types.ObjectId;
   variantName?: string;
   costPrice?: number;
+  costPerUnit?: number;
+  cogs?: number;
+  grossProfit?: number;
 }
 
 export interface IAttachment {
@@ -40,6 +43,18 @@ export interface ISale extends Document {
   source: 'pos' | 'manual';
   status: 'draft' | 'completed' | 'cancelled';
   attachments: IAttachment[];
+  returns: Array<{
+    items: Array<{
+      productId: mongoose.Types.ObjectId;
+      variantId?: mongoose.Types.ObjectId;
+      quantity: number;
+      costPerUnit: number;
+      cogs: number;
+    }>;
+    notes?: string;
+    createdBy?: string;
+    createdAt: Date;
+  }>;
   businessUnitId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -58,7 +73,10 @@ const SaleItemSchema: Schema = new Schema({
   barcode: { type: String },
   variantId: { type: mongoose.Schema.Types.ObjectId },
   variantName: { type: String },
-  costPrice: { type: Number, default: 0 }
+  costPrice: { type: Number, default: 0 },
+  costPerUnit: { type: Number, default: 0 },
+  cogs: { type: Number, default: 0 },
+  grossProfit: { type: Number, default: 0 }
 });
 
 const AttachmentSchema: Schema = new Schema({
@@ -84,10 +102,26 @@ const SaleSchema: Schema = new Schema({
   source: { type: String, enum: ['pos', 'manual'], default: 'manual' },
   status: { type: String, enum: ['draft', 'completed', 'cancelled'], default: 'completed' },
   attachments: [AttachmentSchema],
+  returns: { type: [{
+    items: [{
+      productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+      variantId: { type: mongoose.Schema.Types.ObjectId },
+      quantity: { type: Number, required: true },
+      costPerUnit: { type: Number, default: 0 },
+      cogs: { type: Number, default: 0 }
+    }],
+    notes: { type: String },
+    createdBy: { type: String },
+    createdAt: { type: Date, default: Date.now }
+  }], default: [] },
   businessUnitId: { type: mongoose.Schema.Types.ObjectId, ref: 'BusinessUnit' },
 }, {
   timestamps: true
 });
+
+SaleSchema.index({ customerId: 1, createdAt: -1 });
+SaleSchema.index({ businessUnitId: 1, createdAt: -1 });
+SaleSchema.index({ 'items.productId': 1, createdAt: -1 });
 
 export const getSaleModel = (connection: Connection) => {
   return (connection.models.Sale as mongoose.Model<ISale>)

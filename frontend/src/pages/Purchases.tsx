@@ -11,6 +11,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import RecordActions from '@/components/RecordActions'
 import { authHeaders, listItems, listParams } from '@/lib/api'
 import { BusinessUnitSelect, defaultUnitFormValue } from '@/components/BusinessUnitSelect'
+import SearchableSelect, { partySelectOption, productSelectOption } from '@/components/SearchableSelect'
 
 interface FormItem {
   productId: string
@@ -337,17 +338,15 @@ const Purchases = () => {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="space-y-1">
                   <Label htmlFor="supplier">Supplier</Label>
-                  <select
+                  <SearchableSelect
                     id="supplier"
-                    className="w-full h-10 px-3 border rounded-md"
                     value={formData.supplierId}
-                    onChange={(e) => setFormData({ ...formData, supplierId: e.target.value })}
-                  >
-                    <option value="">Select Supplier</option>
-                    {suppliers.map((supplier: any) => (
-                      <option key={supplier._id} value={supplier._id}>{supplier.name}</option>
-                    ))}
-                  </select>
+                    onChange={(supplierId) => setFormData({ ...formData, supplierId })}
+                    placeholder="Select supplier"
+                    searchPlaceholder="Search name, phone, or address…"
+                    emptyLabel="Select supplier"
+                    options={suppliers.map(partySelectOption)}
+                  />
                 </div>
                 <BusinessUnitSelect
                   value={formData.businessUnitId}
@@ -369,7 +368,7 @@ const Purchases = () => {
                     min={0}
                     step="0.01"
                     value={formData.paidAmount}
-                    onChange={(e) => setFormData({ ...formData, paidAmount: Number(e.target.value) })}
+                    onChange={(e) => setFormData({ ...formData, paidAmount: e.target.value === '' ? 0 : Number(e.target.value) })}
                   />
                 </div>
               </div>
@@ -382,71 +381,99 @@ const Purchases = () => {
                   </Button>
                 </div>
                 {formData.items.map((item: any, index: number) => (
-                  <div key={index} className="grid grid-cols-2 md:grid-cols-7 gap-2">
-                    <select
-                      className="h-10 px-3 border rounded-md"
-                      value={item.productId}
-                      onChange={(e) => updateItem(index, 'productId', e.target.value)}
-                      required
-                    >
-                      <option value="">Select Product</option>
-                      {products.map((product: any) => (
-                        <option key={product._id} value={product._id}>{product.name} - ₹{product.purchasePrice}</option>
-                      ))}
-                    </select>
+                  <div key={index} className="grid grid-cols-2 gap-2 rounded-xl border p-3 md:grid-cols-7">
+                    <div className="space-y-1">
+                      <Label htmlFor={`pur-product-${index}`} className="text-xs font-semibold">Product</Label>
+                      <SearchableSelect
+                        id={`pur-product-${index}`}
+                        value={item.productId}
+                        onChange={(productId) => updateItem(index, 'productId', productId)}
+                        placeholder="Select product"
+                        searchPlaceholder="Search name, SKU, or barcode…"
+                        required
+                        options={products.map((product: any) => productSelectOption({
+                          ...product,
+                          purchasePrice: product.purchasePrice,
+                          sellingPrice: product.sellingPrice
+                        }))}
+                      />
+                    </div>
                     {(() => {
                       const product = products.find((row: any) => row._id === item.productId)
                       const variants = product?.variants || []
                       if (!variants.length) return <div className="hidden md:block" />
                       return (
-                        <select
-                          className="h-10 px-3 border rounded-md"
-                          value={item.variantId}
-                          onChange={(e) => updateItem(index, 'variantId', e.target.value)}
-                          required
-                        >
-                          <option value="">Select variant</option>
-                          {variants.map((variant: any) => (
-                            <option key={variant._id} value={variant._id}>
-                              {variant.name} · stk {variant.stock}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="space-y-1">
+                          <Label htmlFor={`pur-variant-${index}`} className="text-xs font-semibold">Variant</Label>
+                          <SearchableSelect
+                            id={`pur-variant-${index}`}
+                            value={item.variantId}
+                            onChange={(variantId) => updateItem(index, 'variantId', variantId)}
+                            placeholder="Select variant"
+                            required
+                            options={variants.map((variant: any) => ({
+                              value: String(variant._id),
+                              label: variant.name,
+                              description: `Stock ${variant.stock}${variant.sku ? ` · ${variant.sku}` : ''}`,
+                              searchText: `${variant.name} ${variant.sku || ''} ${variant.barcode || ''}`
+                            }))}
+                          />
+                        </div>
                       )
                     })()}
-                    <Input
-                      type="number"
-                      placeholder="Qty"
-                      value={item.quantity}
-                      onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value))}
-                      required
-                    />
-                    <Input
-                      type="number"
-                      placeholder="Price"
-                      value={item.price}
-                      onChange={(e) => updateItem(index, 'price', parseFloat(e.target.value))}
-                      required
-                    />
-                    <Input
-                      type="number"
-                      placeholder="Discount"
-                      value={item.discount}
-                      onChange={(e) => updateItem(index, 'discount', parseFloat(e.target.value))}
-                    />
-                    <Input
-                      type="number"
-                      placeholder="GST %"
-                      value={item.gst}
-                      onChange={(e) => updateItem(index, 'gst', parseFloat(e.target.value))}
-                    />
-                    <Input
-                      type="number"
-                      placeholder="Total"
-                      value={item.total}
-                      readOnly
-                      className="bg-gray-100"
-                    />
+                    <div className="space-y-1">
+                      <Label htmlFor={`pur-qty-${index}`} className="text-xs font-semibold">Quantity</Label>
+                      <Input
+                        id={`pur-qty-${index}`}
+                        type="number"
+                        placeholder="Qty"
+                        value={item.quantity}
+                        onChange={(e) => updateItem(index, 'quantity', e.target.value === '' ? 0 : Number(e.target.value))}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor={`pur-price-${index}`} className="text-xs font-semibold">Price</Label>
+                      <Input
+                        id={`pur-price-${index}`}
+                        type="number"
+                        placeholder="Price"
+                        value={item.price}
+                        onChange={(e) => updateItem(index, 'price', e.target.value === '' ? 0 : Number(e.target.value))}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor={`pur-discount-${index}`} className="text-xs font-semibold">Discount</Label>
+                      <Input
+                        id={`pur-discount-${index}`}
+                        type="number"
+                        placeholder="Discount"
+                        value={item.discount}
+                        onChange={(e) => updateItem(index, 'discount', e.target.value === '' ? 0 : Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor={`pur-gst-${index}`} className="text-xs font-semibold">GST %</Label>
+                      <Input
+                        id={`pur-gst-${index}`}
+                        type="number"
+                        placeholder="GST %"
+                        value={item.gst}
+                        onChange={(e) => updateItem(index, 'gst', e.target.value === '' ? 0 : Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor={`pur-total-${index}`} className="text-xs font-semibold">Line Total</Label>
+                      <Input
+                        id={`pur-total-${index}`}
+                        type="number"
+                        placeholder="Total"
+                        value={item.total}
+                        readOnly
+                        className="bg-gray-100"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>

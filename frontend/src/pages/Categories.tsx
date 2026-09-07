@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { authHeaders, listItems, listParams } from '@/lib/api'
+import ExcelImport from '@/components/ExcelImport'
 
 type Category = {
   _id: string
@@ -137,6 +138,16 @@ const Categories = () => {
           <CardContent>
             {errorMessage && (
               <div className="mb-4 rounded-xl border border-red-600/30 bg-red-50 px-4 py-3 text-sm text-red-800">{errorMessage}</div>
+            )}
+            {!editingId && (
+              <div className="mb-5">
+                <ExcelImport
+                  samplePath="/api/categories/import/sample"
+                  importPath="/api/categories/import"
+                  fileName="categories-import-sample.xlsx"
+                  onImported={fetchCategories}
+                />
+              </div>
             )}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">

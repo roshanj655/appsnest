@@ -1,18 +1,21 @@
 import { Connection } from 'mongoose';
-import { getProductModel } from '../models/tenant/Product';
-import { getInventoryTransactionModel } from '../models/tenant/InventoryTransaction';
+import {
+  applyInventoryMovement,
+  rollupProductStock as rollup,
+  type MovementSource
+} from '../services/inventoryCosting';
 
-type MovementSource = 'sale' | 'purchase' | 'adjustment' | 'opening' | 'return';
+export type { MovementSource };
+export const rollupProductStock = rollup;
 
-const findVariant = (product: any, variantId?: string) => {
-  if (!variantId) return null;
-  return (product.variants || []).find((variant: any) => String(variant._id) === String(variantId)) || null;
-};
-
-export const rollupProductStock = (product: any) => {
-  if (product.variants?.length) {
-    product.stock = product.variants.reduce((sum: number, variant: any) => sum + Number(variant.stock || 0), 0);
-  }
+const typeFromSource = (source: MovementSource, direction: 'in' | 'out', notes?: string) => {
+  if (source === 'purchase') return direction === 'in' ? 'PURCHASE' : 'PURCHASE_RETURN';
+  if (source === 'sale') return direction === 'out' ? 'SALE' : 'SALE_RETURN';
+  if (source === 'opening') return 'OPENING';
+  if (source === 'return') return direction === 'in' ? 'SALE_RETURN' : 'PURCHASE_RETURN';
+  if (/expir/i.test(String(notes || ''))) return 'EXPIRY';
+  if (/damage/i.test(String(notes || ''))) return 'DAMAGE';
+  return 'ADJUSTMENT';
 };
 
 export const applyStockDelta = async (
@@ -25,52 +28,30 @@ export const applyStockDelta = async (
     source: MovementSource;
     sourceId?: string;
     notes?: string;
+    unitCost?: number;
+    createdBy?: string;
+    warehouseId?: string;
   }
 ) => {
-  const Product = getProductModel(connection);
-  const product = await Product.findById(input.productId);
-  if (!product) {
-    throw new Error('Product not found');
-  }
-  const delta = input.direction === 'in' ? input.quantity : -input.quantity;
-  const variant = findVariant(product, input.variantId);
-  if (input.variantId && !variant) {
-    throw new Error('Variant not found');
-  }
-  if (variant) {
-    const next = Number(variant.stock || 0) + delta;
-    if (next < 0) {
-      throw new Error(`${product.name} (${variant.name}) would have negative stock.`);
-    }
-    variant.stock = next;
-    rollupProductStock(product);
-  } else {
-    const next = Number(product.stock || 0) + delta;
-    if (next < 0) {
-      throw new Error(`${product.name} would have negative stock.`);
-    }
-    product.stock = next;
-  }
-  await product.save();
-  const InventoryTransaction = getInventoryTransactionModel(connection);
-  await InventoryTransaction.create({
+  const result = await applyInventoryMovement(connection, {
     productId: input.productId,
-    variantId: variant?._id,
-    variantName: variant?.name,
+    variantId: input.variantId,
     quantity: input.quantity,
     direction: input.direction,
-    source: input.source,
-    sourceId: input.sourceId,
+    transactionType: typeFromSource(input.source, input.direction, input.notes) as any,
+    unitCost: input.unitCost,
+    referenceType: input.source.toUpperCase(),
+    referenceId: input.sourceId,
     notes: input.notes,
-    stockAfter: variant ? variant.stock : product.stock,
-    businessUnitId: product.businessUnitId
+    createdBy: input.createdBy,
+    warehouseId: input.warehouseId
   });
-  return product;
+  return result.product;
 };
 
 export const applyLineStock = async (
   connection: Connection,
-  items: Array<{ productId?: any; variantId?: any; quantity?: number }>,
+  items: Array<{ productId?: any; variantId?: any; quantity?: number; price?: number; unitCost?: number; costPerUnit?: number; costPrice?: number }>,
   multiplier: number,
   source: MovementSource,
   sourceId?: string
@@ -87,7 +68,8 @@ export const applyLineStock = async (
       quantity: Math.abs(quantity),
       direction: delta >= 0 ? 'in' : 'out',
       source,
-      sourceId
+      sourceId,
+      unitCost: Number(item.unitCost ?? item.price ?? item.costPerUnit ?? item.costPrice ?? 0) || undefined
     });
   }
 };

@@ -106,8 +106,8 @@ const ProfitReport = () => {
             </Card>
             <Card className="bg-red-50 border-red-100">
               <CardContent className="p-6">
-                <div className="text-xs text-red-600 font-medium">Purchases</div>
-                <div className="text-3xl font-bold text-red-700">₹{data.totalPurchases.toFixed(2)}</div>
+                <div className="text-xs text-red-600 font-medium">COGS</div>
+                <div className="text-3xl font-bold text-red-700">₹{Number(data.totalCogs ?? 0).toFixed(2)}</div>
               </CardContent>
             </Card>
             <Card className="bg-orange-50 border-orange-100">
@@ -154,40 +154,32 @@ const ProfitReport = () => {
                     <TableRow>
                       <TableHead>Item</TableHead>
                       <TableHead>Quantity Sold</TableHead>
-                      <TableHead>Total Revenue</TableHead>
-                      <TableHead>Total Cost</TableHead>
-                      <TableHead>Profit</TableHead>
+                      <TableHead>Revenue</TableHead>
+                      <TableHead>COGS</TableHead>
+                      <TableHead>Gross Profit</TableHead>
+                      <TableHead>Profit %</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {data.itemProfits.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="h-24 text-center">
+                        <TableCell colSpan={6} className="h-24 text-center">
                           No sales data available
                         </TableCell>
                       </TableRow>
                     ) : (
                       data.itemProfits.map((item: any, index: number) => (
                         <TableRow key={item.variantId ? `${item.productId}:${item.variantId}` : item.productId || index}>
+                          <TableCell>{item.name || item.productId}</TableCell>
+                          <TableCell>{item.quantity}</TableCell>
+                          <TableCell>₹{Number(item.totalRevenue).toFixed(2)}</TableCell>
+                          <TableCell>₹{Number(item.cogs ?? item.totalCost).toFixed(2)}</TableCell>
                           <TableCell>
-                            {item.name || item.productId}
-                          </TableCell>
-                          <TableCell>
-                            {item.quantity}
-                          </TableCell>
-                          <TableCell>
-                            ₹{item.totalRevenue.toFixed(2)}
-                          </TableCell>
-                          <TableCell>
-                            ₹{item.totalCost.toFixed(2)}
-                          </TableCell>
-                          <TableCell>
-                            <span className={`font-semibold ${
-                              item.profit >= 0 ? 'text-emerald-600' : 'text-destructive'
-                            }`}>
-                              ₹{item.profit.toFixed(2)}
+                            <span className={`font-semibold ${item.profit >= 0 ? 'text-emerald-600' : 'text-destructive'}`}>
+                              ₹{Number(item.profit).toFixed(2)}
                             </span>
                           </TableCell>
+                          <TableCell>{Number(item.profitPercent || 0).toFixed(2)}%</TableCell>
                         </TableRow>
                       ))
                     )}

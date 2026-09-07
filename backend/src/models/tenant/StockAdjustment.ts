@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document, Connection } from 'mongoose';
 
-export const STOCK_REASONS = ['opening', 'found', 'damage', 'loss', 'return', 'correction', 'other'] as const;
+export const STOCK_REASONS = ['opening', 'found', 'damage', 'loss', 'expiry', 'return', 'correction', 'other'] as const;
 export type StockReason = typeof STOCK_REASONS[number];
 
 export interface IStockAdjustment extends Document {
@@ -10,6 +10,7 @@ export interface IStockAdjustment extends Document {
   quantity: number;
   direction: 'in' | 'out';
   reason: StockReason;
+  unitCost?: number;
   notes?: string;
   businessUnitId?: mongoose.Types.ObjectId;
   status: 'active' | 'cancelled';
@@ -24,6 +25,7 @@ const StockAdjustmentSchema: Schema = new Schema({
   quantity: { type: Number, required: true, min: 1 },
   direction: { type: String, enum: ['in', 'out'], required: true },
   reason: { type: String, enum: STOCK_REASONS, required: true },
+  unitCost: { type: Number, default: 0 },
   notes: { type: String, trim: true },
   businessUnitId: { type: mongoose.Schema.Types.ObjectId, ref: 'BusinessUnit' },
   status: { type: String, enum: ['active', 'cancelled'], default: 'active' }

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { isSuperAdmin } from '@/lib/auth'
+import SearchableSelect from '@/components/SearchableSelect'
 
 type ConfirmState = {
   title: string
@@ -397,16 +398,16 @@ const Businesses = () => {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="space-y-2">
                   <Label htmlFor="subscriptionPlan">Plan</Label>
-                  <select
+                  <SearchableSelect
                     id="subscriptionPlan"
-                    className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm"
                     value={formData.subscriptionPlan}
-                    onChange={(e) => setFormData({ ...formData, subscriptionPlan: e.target.value })}
-                  >
-                    <option value="basic">Basic</option>
-                    <option value="pro">Pro</option>
-                    <option value="enterprise">Enterprise</option>
-                  </select>
+                    onChange={(subscriptionPlan) => setFormData({ ...formData, subscriptionPlan })}
+                    options={[
+                      { value: 'basic', label: 'Basic' },
+                      { value: 'pro', label: 'Pro' },
+                      { value: 'enterprise', label: 'Enterprise' }
+                    ]}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="subscriptionStartsAt">Starts</Label>

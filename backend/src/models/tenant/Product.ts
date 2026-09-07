@@ -9,6 +9,10 @@ export interface IProductVariant {
   purchasePrice: number;
   sellingPrice: number;
   stock: number;
+  averageCost: number;
+  lastPurchaseCost: number;
+  lastPurchaseDate?: Date;
+  inventoryValue: number;
 }
 
 export interface IProduct extends Document {
@@ -26,6 +30,10 @@ export interface IProduct extends Document {
   onlineVisible: boolean;
   mrp: number;
   stock: number;
+  averageCost: number;
+  lastPurchaseCost: number;
+  lastPurchaseDate?: Date;
+  inventoryValue: number;
   minStock: number;
   maxStock: number;
   location: string;
@@ -41,6 +49,13 @@ export interface IProduct extends Document {
   updatedAt: Date;
 }
 
+const costingFields = {
+  averageCost: { type: Number, default: 0 },
+  lastPurchaseCost: { type: Number, default: 0 },
+  lastPurchaseDate: { type: Date },
+  inventoryValue: { type: Number, default: 0 }
+};
+
 const VariantSchema: Schema = new Schema({
   name: { type: String, required: true },
   sku: { type: String },
@@ -48,7 +63,8 @@ const VariantSchema: Schema = new Schema({
   attributes: { type: String },
   purchasePrice: { type: Number, default: 0 },
   sellingPrice: { type: Number, default: 0 },
-  stock: { type: Number, default: 0 }
+  stock: { type: Number, default: 0 },
+  ...costingFields
 });
 
 const ProductSchema: Schema = new Schema({
@@ -66,6 +82,7 @@ const ProductSchema: Schema = new Schema({
   onlineVisible: { type: Boolean, default: false },
   mrp: { type: Number },
   stock: { type: Number, required: true, default: 0 },
+  ...costingFields,
   minStock: { type: Number, default: 10 },
   maxStock: { type: Number, default: 0 },
   location: { type: String },
@@ -80,6 +97,9 @@ const ProductSchema: Schema = new Schema({
 }, {
   timestamps: true
 });
+
+ProductSchema.index({ businessUnitId: 1, sku: 1 });
+ProductSchema.index({ businessUnitId: 1, name: 1 });
 
 export const getProductModel = (connection: Connection) => {
   return (connection.models.Product as mongoose.Model<IProduct>)

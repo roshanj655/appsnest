@@ -4,9 +4,9 @@ import { getProductModel } from '../models/tenant/Product';
 import { logAuditEvent } from '../utils/auditLogger';
 import { paginatedResult, parsePagination, textSearch } from '../utils/pagination';
 import { mergeFilters, resolveBusinessUnitId, unitScope } from '../utils/businessUnit';
-import { rollupProductStock } from '../utils/inventoryMovement';
+import { applyInventoryMovement, recordOpeningIfNeeded, rollupProductStock } from '../services/inventoryCosting';
 
-const withRolledStock = (body: Record<string, unknown>) => {
+const catalogFields = (body: Record<string, unknown>) => {
   const payload = { ...body };
   const variants = Array.isArray(payload.variants) ? payload.variants : [];
   if (variants.length) {
@@ -15,7 +15,6 @@ const withRolledStock = (body: Record<string, unknown>) => {
       if (!next._id) delete next._id;
       return next;
     });
-    payload.stock = (payload.variants as any[]).reduce((sum: number, variant: any) => sum + Number(variant.stock || 0), 0);
   }
   return payload;
 };
@@ -80,10 +79,14 @@ export const lookupProduct = async (req: TenantRequest, res: Response) => {
 export const createProduct = async (req: TenantRequest, res: Response) => {
   try {
     const Product = getProductModel(req.tenantDB!);
+    const payload = catalogFields(req.body);
     const product = await Product.create({
-      ...withRolledStock(req.body),
+      ...payload,
+      lastPurchaseCost: Number(payload.lastPurchaseCost ?? payload.purchasePrice ?? 0),
+      averageCost: Number(payload.averageCost ?? payload.purchasePrice ?? 0),
       businessUnitId: resolveBusinessUnitId(req, req.body)
     });
+    await recordOpeningIfNeeded(req.tenantDB!, product, req.user ? String((req.user as any)._id || '') : undefined);
 
     if (req.user && req.business) {
       await logAuditEvent({
@@ -97,7 +100,7 @@ export const createProduct = async (req: TenantRequest, res: Response) => {
       });
     }
 
-    res.status(201).json(product);
+    res.status(201).json(await Product.findById(product._id));
   } catch (error) {
     res.status(500).json({ message: 'Error creating product' });
   }
@@ -107,11 +110,79 @@ export const updateProduct = async (req: TenantRequest, res: Response) => {
   try {
     const Product = getProductModel(req.tenantDB!);
     const entityId = req.params.id as string;
-    const payload = withRolledStock(req.body);
+    const existing = await Product.findById(entityId);
+    if (!existing) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    const payload = catalogFields(req.body);
+    delete payload.stock;
+    delete payload.averageCost;
+    delete payload.lastPurchaseCost;
+    delete payload.lastPurchaseDate;
+    delete payload.inventoryValue;
+
+    const incomingVariants = Array.isArray(payload.variants) ? payload.variants : null;
+    const existingIds = new Set((existing.variants || []).map((row: any) => String(row._id)));
+    if (incomingVariants) {
+      payload.variants = incomingVariants.map((variant: any) => {
+        const current = (existing.variants || []).find((row: any) => variant._id && String(row._id) === String(variant._id));
+        if (current) {
+          return {
+            ...((current as any).toObject ? (current as any).toObject() : current),
+            name: variant.name ?? current.name,
+            sku: variant.sku ?? current.sku,
+            barcode: variant.barcode ?? current.barcode,
+            attributes: variant.attributes ?? current.attributes,
+            sellingPrice: variant.sellingPrice ?? current.sellingPrice,
+            stock: current.stock,
+            purchasePrice: current.purchasePrice,
+            averageCost: current.averageCost,
+            lastPurchaseCost: current.lastPurchaseCost,
+            lastPurchaseDate: current.lastPurchaseDate,
+            inventoryValue: current.inventoryValue
+          };
+        }
+        return {
+          ...variant,
+          stock: 0,
+          averageCost: 0,
+          lastPurchaseCost: Number(variant.purchasePrice || existing.purchasePrice || 0),
+          inventoryValue: 0
+        };
+      });
+    }
+
     const product = await Product.findByIdAndUpdate(entityId, payload, { new: true });
-    if (product) {
-      rollupProductStock(product);
-      await product.save();
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    if (incomingVariants) {
+      for (const variant of product.variants || []) {
+        if (existingIds.has(String(variant._id))) continue;
+        const incoming = incomingVariants.find((row: any) => !row._id && row.name === variant.name);
+        const qty = Number(incoming?.stock || 0);
+        const unitCost = Number(incoming?.purchasePrice || variant.lastPurchaseCost || existing.purchasePrice || 0);
+        if (qty > 0) {
+          await applyInventoryMovement(req.tenantDB!, {
+            productId: String(product._id),
+            variantId: String(variant._id),
+            quantity: qty,
+            transactionType: 'OPENING',
+            unitCost,
+            referenceType: 'PRODUCT',
+            referenceId: String(product._id),
+            createdBy: req.user ? String((req.user as any)._id || '') : undefined
+          });
+        }
+      }
+    }
+
+    const fresh = await Product.findById(entityId);
+    if (fresh) {
+      rollupProductStock(fresh);
+      await fresh.save();
     }
 
     if (req.user && req.business) {
@@ -126,9 +197,9 @@ export const updateProduct = async (req: TenantRequest, res: Response) => {
       });
     }
 
-    res.json(product);
-  } catch (error) {
-    res.status(500).json({ message: 'Error updating product' });
+    res.json(fresh);
+  } catch (error: any) {
+    res.status(error?.status || 500).json({ message: error.message || 'Error updating product' });
   }
 };
 
