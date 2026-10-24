@@ -3,12 +3,13 @@ import axios from 'axios'
 import PageHeader from '../components/PageHeader'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import RecordActions from '@/components/RecordActions'
+import { FormField } from '@/components/FormField'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { authHeaders, listItems, listParams } from '@/lib/api'
+import { requiredMsg, useFieldErrors } from '@/lib/formValidation'
 import ExcelImport from '@/components/ExcelImport'
 
 type Category = {
@@ -31,6 +32,7 @@ const Categories = () => {
   const [confirmKind, setConfirmKind] = useState<ConfirmKind | null>(null)
   const [confirmRow, setConfirmRow] = useState<Category | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
+  const { fieldErrors, clearFieldErrors, clearFieldError, showFieldErrors } = useFieldErrors()
 
   useEffect(() => {
     fetchCategories()
@@ -49,12 +51,14 @@ const Categories = () => {
     setShowForm(false)
     setEditingId(null)
     setFormData(emptyForm)
+    clearFieldErrors()
   }
 
   const openCreate = () => {
     setEditingId(null)
     setFormData(emptyForm)
     setErrorMessage('')
+    clearFieldErrors()
     setShowForm(true)
   }
 
@@ -62,16 +66,17 @@ const Categories = () => {
     setEditingId(category._id)
     setFormData({ name: category.name })
     setErrorMessage('')
+    clearFieldErrors()
     setShowForm(true)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMessage('')
-    if (!formData.name.trim()) {
-      setErrorMessage('Category name is required.')
-      return
-    }
+    clearFieldErrors()
+    const errors: Record<string, string> = {}
+    if (!formData.name.trim()) errors['category-name'] = requiredMsg('Category name')
+    if (showFieldErrors(errors)) return
     try {
       setSaving(true)
       if (editingId) {
@@ -149,17 +154,19 @@ const Categories = () => {
                 />
               </div>
             )}
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="category-name">Category Name</Label>
+            <form onSubmit={handleSubmit} noValidate className="space-y-4">
+              <FormField id="category-name" label="Category Name" error={fieldErrors['category-name']} required>
                 <Input
                   id="category-name"
                   value={formData.name}
-                  onChange={(e) => setFormData({ name: e.target.value })}
+                  onChange={(e) => {
+                    clearFieldError('category-name')
+                    setFormData({ name: e.target.value })
+                  }}
                   placeholder="Enter category name"
-                  required
+                  invalid={Boolean(fieldErrors['category-name'])}
                 />
-              </div>
+              </FormField>
               <div className="flex justify-end gap-3">
                 <Button type="button" variant="outline" onClick={closeForm}>Cancel</Button>
                 <Button type="submit" disabled={saving}>{saving ? 'Saving…' : editingId ? 'Update Category' : 'Save Category'}</Button>

@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import axios from 'axios'
 import { authHeaders } from '@/lib/api'
+import ReportChart from '@/components/ReportChart'
+import { groupByDay } from '@/lib/reportCharts'
 
 const PurchaseHistory = () => {
   const [items, setItems] = useState<any[]>([])
@@ -58,6 +60,14 @@ const PurchaseHistory = () => {
           <Button onClick={fetchRows}>Apply</Button>
         </CardContent>
       </Card>
+      <ReportChart
+        title="Purchase cost by day"
+        description="Original line totals kept for each purchase date."
+        type="bar"
+        data={groupByDay(items, ['date'], ['totalCost'])}
+        xKey="date"
+        series={[{ key: 'value', name: 'Purchase cost', color: '#a78bfa' }]}
+      />
       <Card>
         <CardContent className="p-0 overflow-x-auto">
           <Table>

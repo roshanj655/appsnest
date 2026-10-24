@@ -11,6 +11,8 @@ export interface ICustomer extends Document {
   pincode: string;
   gstin: string;
   creditLimit: number;
+  outstandingBalance: number;
+  advanceBalance: number;
   notes: string;
   status: 'active' | 'inactive';
   createdAt: Date;
@@ -28,6 +30,8 @@ const CustomerSchema: Schema = new Schema({
   pincode: { type: String },
   gstin: { type: String },
   creditLimit: { type: Number, default: 0 },
+  outstandingBalance: { type: Number, default: 0 },
+  advanceBalance: { type: Number, default: 0 },
   notes: { type: String },
   status: { type: String, enum: ['active', 'inactive'], default: 'active' },
 }, {

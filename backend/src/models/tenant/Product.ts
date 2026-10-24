@@ -8,6 +8,8 @@ export interface IProductVariant {
   attributes?: string;
   purchasePrice: number;
   sellingPrice: number;
+  maxSellingPrice?: number;
+  minSellingPrice?: number;
   stock: number;
   averageCost: number;
   lastPurchaseCost: number;
@@ -26,6 +28,8 @@ export interface IProduct extends Document {
   unit: string;
   purchasePrice: number;
   sellingPrice: number;
+  maxSellingPrice?: number;
+  minSellingPrice?: number;
   onlinePrice: number;
   onlineVisible: boolean;
   mrp: number;
@@ -63,6 +67,8 @@ const VariantSchema: Schema = new Schema({
   attributes: { type: String },
   purchasePrice: { type: Number, default: 0 },
   sellingPrice: { type: Number, default: 0 },
+  maxSellingPrice: { type: Number, default: 0 },
+  minSellingPrice: { type: Number, default: 0 },
   stock: { type: Number, default: 0 },
   ...costingFields
 });
@@ -78,6 +84,8 @@ const ProductSchema: Schema = new Schema({
   unit: { type: String, default: 'pcs' },
   purchasePrice: { type: Number, required: true, default: 0 },
   sellingPrice: { type: Number, required: true, default: 0 },
+  maxSellingPrice: { type: Number, default: 0 },
+  minSellingPrice: { type: Number, default: 0 },
   onlinePrice: { type: Number, default: 0 },
   onlineVisible: { type: Boolean, default: false },
   mrp: { type: Number },

@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import PageHeader from '../components/PageHeader'
+import ReportChart from '@/components/ReportChart'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import axios from 'axios'
+import { topN } from '@/lib/reportCharts'
 
 const ProfitReport = () => {
   const [data, setData] = useState<any>(null)
@@ -116,6 +118,18 @@ const ProfitReport = () => {
                 <div className="text-3xl font-bold text-orange-700">₹{(data.totalMiscExpenses || 0).toFixed(2)}</div>
               </CardContent>
             </Card>
+            <Card className="bg-slate-50 border-slate-200">
+              <CardContent className="p-6">
+                <div className="text-xs text-slate-600 font-medium">Loan Interest Paid</div>
+                <div className="text-3xl font-bold text-slate-700">₹{Number(data.totalLoanInterest || 0).toFixed(2)}</div>
+              </CardContent>
+            </Card>
+            <Card className="bg-indigo-50 border-indigo-100">
+              <CardContent className="p-6">
+                <div className="text-xs text-indigo-600 font-medium">Net Profit</div>
+                <div className="text-3xl font-bold text-indigo-700">₹{Number(data.netProfit || 0).toFixed(2)}</div>
+              </CardContent>
+            </Card>
             <Card className={`${
               data.grossProfit >= 0 ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100'
             }`}>
@@ -140,6 +154,36 @@ const ProfitReport = () => {
                 }`}>{data.profitMargin.toFixed(2)}%</div>
               </CardContent>
             </Card>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <ReportChart
+              title="Revenue mix"
+              description="How sales break into COGS, expenses, and profit."
+              type="pie"
+              xKey="name"
+              data={[
+                { name: 'COGS', value: Number(data.totalCogs || 0), color: '#f43f5e' },
+                { name: 'Misc expenses', value: Number(data.totalMiscExpenses || 0), color: '#f59e0b' },
+                { name: 'Gross profit', value: Math.max(0, Number(data.grossProfit || 0)), color: '#10b981' }
+              ]}
+              series={[{ key: 'value', name: 'Amount', color: '#10b981' }]}
+            />
+            <ReportChart
+              title="Top items by profit"
+              description="Highest gross profit items in this range."
+              type="bar"
+              layout="vertical"
+              xKey="name"
+              data={topN(
+                (data.itemProfits || []).map((item: any) => ({
+                  name: String(item.name || 'Item').slice(0, 22),
+                  value: Number(item.profit || 0)
+                })),
+                8
+              )}
+              series={[{ key: 'value', name: 'Profit', color: '#22d3ee' }]}
+            />
           </div>
 
           {/* Item-wise Profit Table */}

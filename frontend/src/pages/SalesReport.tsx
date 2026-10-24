@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import PageHeader from '../components/PageHeader'
+import ReportChart from '@/components/ReportChart'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import axios from 'axios'
+import { groupByDay } from '@/lib/reportCharts'
 
 const SalesReport = () => {
   const [sales, setSales] = useState<any[]>([])
@@ -103,6 +105,15 @@ const SalesReport = () => {
           </div>
         </CardContent>
       </Card>
+
+      <ReportChart
+        title="Sales by day"
+        description="Completed invoice totals for the selected dates."
+        type="line"
+        data={groupByDay(sales, ['createdAt'], ['total'])}
+        xKey="date"
+        series={[{ key: 'value', name: 'Sales', color: '#10b981' }]}
+      />
 
       {/* Sales Table */}
       <Card>

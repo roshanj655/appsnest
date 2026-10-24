@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
 import PageHeader from '@/components/PageHeader'
+import ReportChart from '@/components/ReportChart'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { listItems, listParams } from '@/lib/api'
@@ -125,6 +126,32 @@ const Dashboard = () => {
 
       {stats && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <ReportChart
+            title="Monthly overview"
+            description="Sales, purchases, expenses, and profit this month."
+            type="bar"
+            xKey="name"
+            data={[
+              { name: 'Sales', value: Number(stats.monthlySales || 0) },
+              { name: 'Purchases', value: Number(stats.monthlyPurchases || 0) },
+              { name: 'Expenses', value: Number(stats.monthlyExpenses || 0) },
+              { name: 'Profit', value: Number(stats.monthlyProfit || 0) }
+            ]}
+            series={[{ key: 'value', name: 'Amount', color: '#22d3ee' }]}
+          />
+          <ReportChart
+            title="Top products"
+            description="Highest quantity sold."
+            type="bar"
+            layout="vertical"
+            valueFormat="number"
+            xKey="name"
+            data={(stats.topProducts || []).map((row: any) => ({
+              name: String(row.name || 'Product').slice(0, 22),
+              value: Number(row.quantity || 0)
+            }))}
+            series={[{ key: 'value', name: 'Qty sold', color: '#10b981' }]}
+          />
           <Card>
             <CardHeader>
               <CardTitle>Recent Sales</CardTitle>
@@ -150,25 +177,6 @@ const Dashboard = () => {
                 </div>
               ))}
             </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Top Products</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {(stats.topProducts || []).map((row: any) => (
-                <div key={row.productId} className="flex justify-between text-sm">
-                  <span>{row.name}</span>
-                  <span>{row.quantity} sold</span>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Monthly Snapshot</CardTitle>
-              <CardDescription>Sales ₹{(stats.monthlySales || 0).toFixed(2)} · Profit ₹{(stats.monthlyProfit || 0).toFixed(2)}</CardDescription>
-            </CardHeader>
           </Card>
         </div>
       )}

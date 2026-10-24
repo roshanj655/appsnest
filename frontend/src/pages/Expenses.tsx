@@ -3,12 +3,13 @@ import axios from 'axios'
 import PageHeader from '../components/PageHeader'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import RecordActions from '@/components/RecordActions'
+import { FormField } from '@/components/FormField'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { authHeaders, listItems, listParams } from '@/lib/api'
+import { requiredMsg, useFieldErrors } from '@/lib/formValidation'
 import { BusinessUnitSelect, defaultUnitFormValue } from '@/components/BusinessUnitSelect'
 import SearchableSelect from '@/components/SearchableSelect'
 import ExcelImport from '@/components/ExcelImport'
@@ -58,6 +59,7 @@ const Expenses = () => {
   const [confirmKind, setConfirmKind] = useState<ConfirmKind | null>(null)
   const [confirmRow, setConfirmRow] = useState<Expense | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
+  const { fieldErrors, clearFieldErrors, clearFieldError, showFieldErrors } = useFieldErrors()
 
   const fetchExpenses = async () => {
     try {
@@ -77,12 +79,14 @@ const Expenses = () => {
     setShowForm(false)
     setEditingId(null)
     setFormData({ ...emptyForm, expenseDate: today(), businessUnitId: defaultUnitFormValue() })
+    clearFieldErrors()
   }
 
   const openCreate = () => {
     setEditingId(null)
     setFormData({ ...emptyForm, expenseDate: today(), businessUnitId: defaultUnitFormValue() })
     setErrorMessage('')
+    clearFieldErrors()
     setShowForm(true)
   }
 
@@ -97,20 +101,18 @@ const Expenses = () => {
       businessUnitId: typeof expense.businessUnitId === 'object' ? expense.businessUnitId?._id || '' : expense.businessUnitId || ''
     })
     setErrorMessage('')
+    clearFieldErrors()
     setShowForm(true)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMessage('')
-    if (!formData.title.trim()) {
-      setErrorMessage('Expense title is required.')
-      return
-    }
-    if (formData.amount < 0) {
-      setErrorMessage('Amount cannot be negative.')
-      return
-    }
+    clearFieldErrors()
+    const errors: Record<string, string> = {}
+    if (!formData.title.trim()) errors['exp-title'] = requiredMsg('Expense title')
+    if (formData.amount < 0) errors['exp-amount'] = 'Amount cannot be negative.'
+    if (showFieldErrors(errors)) return
     try {
       setSaving(true)
       const payload = { ...formData, title: formData.title.trim() }
@@ -196,62 +198,74 @@ const Expenses = () => {
                 />
               </div>
             )}
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} noValidate className="space-y-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="exp-title">Title</Label>
+                <FormField id="exp-title" label="Title" error={fieldErrors['exp-title']} required>
                   <Input
                     id="exp-title"
                     value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    onChange={(e) => {
+                      clearFieldError('exp-title')
+                      setFormData({ ...formData, title: e.target.value })
+                    }}
                     placeholder="Fuel, rent, personal draw"
-                    required
+                    invalid={Boolean(fieldErrors['exp-title'])}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="exp-amount">Amount</Label>
+                </FormField>
+                <FormField id="exp-amount" label="Amount" error={fieldErrors['exp-amount']} required>
                   <Input
                     id="exp-amount"
                     type="number"
                     min={0}
                     step="0.01"
                     value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: Number(e.target.value) })}
-                    required
+                    onChange={(e) => {
+                      clearFieldError('exp-amount')
+                      setFormData({ ...formData, amount: Number(e.target.value) })
+                    }}
+                    invalid={Boolean(fieldErrors['exp-amount'])}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="exp-category">Category</Label>
+                </FormField>
+                <FormField id="exp-category" label="Category" error={fieldErrors['exp-category']}>
                   <SearchableSelect
                     id="exp-category"
                     value={formData.category}
-                    onChange={(category) => setFormData({ ...formData, category })}
+                    onChange={(category) => {
+                      clearFieldError('exp-category')
+                      setFormData({ ...formData, category })
+                    }}
                     options={categories.map((category) => ({ value: category.value, label: category.label }))}
+                    invalid={Boolean(fieldErrors['exp-category'])}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="exp-date">Date</Label>
+                </FormField>
+                <FormField id="exp-date" label="Date" error={fieldErrors['exp-date']}>
                   <Input
                     id="exp-date"
                     type="date"
                     value={formData.expenseDate}
-                    onChange={(e) => setFormData({ ...formData, expenseDate: e.target.value })}
-                    required
+                    onChange={(e) => {
+                      clearFieldError('exp-date')
+                      setFormData({ ...formData, expenseDate: e.target.value })
+                    }}
+                    invalid={Boolean(fieldErrors['exp-date'])}
                   />
-                </div>
+                </FormField>
                 <BusinessUnitSelect
                   value={formData.businessUnitId}
                   onChange={(businessUnitId) => setFormData({ ...formData, businessUnitId })}
                 />
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="exp-notes">Notes</Label>
+                <FormField id="exp-notes" label="Notes" error={fieldErrors['exp-notes']} className="md:col-span-2">
                   <Input
                     id="exp-notes"
                     value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    onChange={(e) => {
+                      clearFieldError('exp-notes')
+                      setFormData({ ...formData, notes: e.target.value })
+                    }}
                     placeholder="Optional details"
+                    invalid={Boolean(fieldErrors['exp-notes'])}
                   />
-                </div>
+                </FormField>
               </div>
               <div className="flex justify-end gap-3">
                 <Button type="button" variant="outline" onClick={closeForm}>Cancel</Button>

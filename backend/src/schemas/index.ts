@@ -29,6 +29,8 @@ export const productSchema = z.object({
   unit: optionalString,
   purchasePrice: money.optional(),
   sellingPrice: money.optional(),
+  maxSellingPrice: money.optional(),
+  minSellingPrice: money.optional(),
   onlinePrice: money.optional(),
   onlineVisible: z.coerce.boolean().optional(),
   mrp: money.optional(),
@@ -51,6 +53,8 @@ export const productSchema = z.object({
     attributes: optionalString,
     purchasePrice: money.optional(),
     sellingPrice: money.optional(),
+    maxSellingPrice: money.optional(),
+    minSellingPrice: money.optional(),
     stock: money.optional()
   })).optional()
 }).passthrough();
@@ -88,6 +92,8 @@ const lineItemSchema = z.object({
   quantity: z.coerce.number().positive(),
   price: money,
   sellingPrice: money.optional(),
+  maxSellingPrice: money.optional(),
+  minSellingPrice: money.optional(),
   actualSoldAmount: money.optional(),
   discount: money.optional(),
   gst: money.optional(),
@@ -97,7 +103,9 @@ const lineItemSchema = z.object({
   variantName: optionalString,
   costPrice: money.optional(),
   unitCost: money.optional(),
-  totalCost: money.optional()
+  totalCost: money.optional(),
+  priceOverrideReason: optionalString,
+  priceApprovedBy: optionalString
 });
 
 const jsonItems = z.preprocess((value) => {
@@ -123,11 +131,24 @@ export const saleSchema = z.object({
   total: money.optional(),
   source: z.enum(['pos', 'manual']).optional(),
   paidAmount: money.optional(),
-  changeAmount: money.optional()
+  changeAmount: money.optional(),
+  paymentReference: optionalString,
+  paymentNotes: optionalString,
+  paymentIdempotencyKey: optionalString
 }).passthrough();
 
 export const saleUpdateSchema = saleSchema.partial().extend({
   items: jsonItems.optional()
+});
+
+export const salePaymentSchema = z.object({
+  amount: money,
+  method: z.string().trim().optional(),
+  paymentMode: z.string().trim().optional(),
+  reference: optionalString,
+  notes: optionalString,
+  paidAt: z.coerce.date().optional(),
+  idempotencyKey: optionalString
 });
 
 export const purchaseSchema = z.object({
@@ -158,6 +179,34 @@ export const expenseSchema = z.object({
 });
 
 export const expenseUpdateSchema = expenseSchema.partial();
+
+export const loanSchema = z.object({
+  lenderName: z.string().trim().min(1),
+  phone: optionalString,
+  purpose: optionalString,
+  notes: optionalString,
+  principalAmount: money,
+  interestRate: money.optional(),
+  expectedInterest: money.optional(),
+  startDate: z.coerce.date().optional(),
+  dueDate: z.coerce.date().optional(),
+  businessUnitId: optionalString,
+  linkedPurchaseIds: z.array(z.string()).optional(),
+  status: z.enum(['active', 'closed', 'cancelled']).optional()
+});
+
+export const loanUpdateSchema = loanSchema.partial();
+
+export const loanRepaymentSchema = z.object({
+  amount: money,
+  type: z.enum(['principal', 'interest', 'mixed']).optional(),
+  principalAmount: money.optional(),
+  interestAmount: money.optional(),
+  method: z.string().trim().optional(),
+  reference: optionalString,
+  notes: optionalString,
+  paidAt: z.coerce.date().optional()
+});
 
 export const stockAdjustmentSchema = z.object({
   productId: z.string().min(1),

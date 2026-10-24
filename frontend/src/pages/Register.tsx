@@ -3,8 +3,9 @@ import axios from 'axios'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { FormField } from '@/components/FormField'
+import { emailMsg, isValidEmail, requiredMsg, useFieldErrors } from '@/lib/formValidation'
 import { isSuperAdmin } from '@/lib/auth'
 import SearchableSelect from '@/components/SearchableSelect'
 
@@ -25,6 +26,7 @@ const Register = () => {
   const [subscriptionPlan, setSubscriptionPlan] = useState('basic')
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const { fieldErrors, clearFieldErrors, clearFieldError, showFieldErrors } = useFieldErrors()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -37,26 +39,27 @@ const Register = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMessage('')
+    clearFieldErrors()
 
-    if (!businessName.trim() || !ownerName.trim() || !businessEmail.trim() || !businessPhone.trim()) {
-      setErrorMessage('Please complete all business details.')
-      return
+    const errors: Record<string, string> = {}
+    if (!businessName.trim()) errors['reg-business-name'] = requiredMsg('Business name')
+    if (!ownerName.trim()) errors['reg-owner-name'] = requiredMsg('Owner name')
+    if (!businessEmail.trim()) errors['reg-business-email'] = requiredMsg('Business email')
+    else if (!isValidEmail(businessEmail)) errors['reg-business-email'] = emailMsg
+    if (!businessPhone.trim()) errors['reg-business-phone'] = requiredMsg('Business phone')
+
+    if (databaseProvider !== 'atlas' && !connectionString.trim()) {
+      errors['reg-connection'] = requiredMsg('Connection string')
     }
 
-    if (!userName.trim() || !userEmail.trim() || !userPassword.trim() || !userPhone.trim()) {
-      setErrorMessage('Please complete all admin user details.')
-      return
-    }
+    if (!userName.trim()) errors['reg-admin-name'] = requiredMsg('Name')
+    if (!userEmail.trim()) errors['reg-admin-email'] = requiredMsg('Email')
+    else if (!isValidEmail(userEmail)) errors['reg-admin-email'] = emailMsg
+    if (!userPassword.trim()) errors['reg-admin-password'] = requiredMsg('Password')
+    else if (userPassword.length < 6) errors['reg-admin-password'] = 'Password must be at least 6 characters long.'
+    if (!userPhone.trim()) errors['reg-admin-phone'] = requiredMsg('Phone')
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessEmail) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail)) {
-      setErrorMessage('Please enter valid email addresses.')
-      return
-    }
-
-    if (userPassword.length < 6) {
-      setErrorMessage('Password must be at least 6 characters long.')
-      return
-    }
+    if (showFieldErrors(errors)) return
 
     try {
       const token = localStorage.getItem('token')
@@ -107,176 +110,215 @@ const Register = () => {
                 {errorMessage}
               </div>
             )}
-            <form onSubmit={handleSubmit} className="space-y-8">
+            <form noValidate onSubmit={handleSubmit} className="space-y-8">
               <div>
                 <h3 className="mb-3 text-lg font-semibold">Business Details</h3>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <Label htmlFor="reg-business-name" className="mb-2 block">Business Name</Label>
-              <Input
-                id="reg-business-name"
-                type="text"
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                placeholder="Enter business name"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="reg-owner-name" className="mb-2 block">Owner Name</Label>
-              <Input
-                id="reg-owner-name"
-                type="text"
-                value={ownerName}
-                onChange={(e) => setOwnerName(e.target.value)}
-                placeholder="Enter owner name"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="reg-business-email" className="mb-2 block">Business Email</Label>
-              <Input
-                id="reg-business-email"
-                type="email"
-                value={businessEmail}
-                onChange={(e) => setBusinessEmail(e.target.value)}
-                placeholder="business@example.com"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="reg-business-phone" className="mb-2 block">Business Phone</Label>
-              <Input
-                id="reg-business-phone"
-                type="text"
-                value={businessPhone}
-                onChange={(e) => setBusinessPhone(e.target.value)}
-                placeholder="Enter business phone"
-                required
-              />
-            </div>
+                  <FormField id="reg-business-name" label="Business Name" error={fieldErrors['reg-business-name']} required>
+                    <Input
+                      id="reg-business-name"
+                      type="text"
+                      value={businessName}
+                      invalid={Boolean(fieldErrors['reg-business-name'])}
+                      onChange={(e) => {
+                        setBusinessName(e.target.value)
+                        clearFieldError('reg-business-name')
+                      }}
+                      placeholder="Enter business name"
+                    />
+                  </FormField>
+                  <FormField id="reg-owner-name" label="Owner Name" error={fieldErrors['reg-owner-name']} required>
+                    <Input
+                      id="reg-owner-name"
+                      type="text"
+                      value={ownerName}
+                      invalid={Boolean(fieldErrors['reg-owner-name'])}
+                      onChange={(e) => {
+                        setOwnerName(e.target.value)
+                        clearFieldError('reg-owner-name')
+                      }}
+                      placeholder="Enter owner name"
+                    />
+                  </FormField>
+                  <FormField id="reg-business-email" label="Business Email" error={fieldErrors['reg-business-email']} required>
+                    <Input
+                      id="reg-business-email"
+                      type="email"
+                      value={businessEmail}
+                      invalid={Boolean(fieldErrors['reg-business-email'])}
+                      onChange={(e) => {
+                        setBusinessEmail(e.target.value)
+                        clearFieldError('reg-business-email')
+                      }}
+                      placeholder="business@example.com"
+                    />
+                  </FormField>
+                  <FormField id="reg-business-phone" label="Business Phone" error={fieldErrors['reg-business-phone']} required>
+                    <Input
+                      id="reg-business-phone"
+                      type="text"
+                      value={businessPhone}
+                      invalid={Boolean(fieldErrors['reg-business-phone'])}
+                      onChange={(e) => {
+                        setBusinessPhone(e.target.value)
+                        clearFieldError('reg-business-phone')
+                      }}
+                      placeholder="Enter business phone"
+                    />
+                  </FormField>
                 </div>
               </div>
 
               <div>
                 <h3 className="mb-3 text-lg font-semibold">Database Configuration</h3>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <Label htmlFor="reg-db-provider" className="mb-2 block">Database Provider</Label>
-              <SearchableSelect
-                id="reg-db-provider"
-                value={databaseProvider}
-                onChange={setDatabaseProvider}
-                options={[
-                  { value: 'atlas', label: 'MongoDB Atlas' },
-                  { value: 'self-hosted', label: 'Self-Hosted' }
-                ]}
-              />
-            </div>
-            <div>
-              <Label htmlFor="reg-plan" className="mb-2 block">Subscription Plan</Label>
-              <SearchableSelect
-                id="reg-plan"
-                value={subscriptionPlan}
-                onChange={setSubscriptionPlan}
-                options={[
-                  { value: 'basic', label: 'Basic' },
-                  { value: 'pro', label: 'Pro' },
-                  { value: 'enterprise', label: 'Enterprise' }
-                ]}
-              />
-            </div>
-            <div>
-              <Label htmlFor="reg-atlas-project" className="mb-2 block">Atlas Project Name</Label>
-              <Input
-                id="reg-atlas-project"
-                type="text"
-                value={atlasProjectName}
-                onChange={(e) => setAtlasProjectName(e.target.value)}
-                placeholder="Optional"
-              />
-            </div>
-            <div>
-              <Label htmlFor="reg-cluster" className="mb-2 block">Cluster Name</Label>
-              <Input
-                id="reg-cluster"
-                type="text"
-                value={clusterName}
-                onChange={(e) => setClusterName(e.target.value)}
-                placeholder="Optional"
-              />
-            </div>
-            <div>
-              <Label htmlFor="reg-db-name" className="mb-2 block">Database Name</Label>
-              <Input
-                id="reg-db-name"
-                type="text"
-                value={databaseName}
-                onChange={(e) => setDatabaseName(e.target.value)}
-                placeholder="Optional"
-              />
-            </div>
-            <div>
-              <Label htmlFor="reg-connection" className="mb-2 block">Connection String</Label>
-              <Input
-                id="reg-connection"
-                type="text"
-                value={connectionString}
-                onChange={(e) => setConnectionString(e.target.value)}
-                required={databaseProvider !== 'atlas'}
-                placeholder={databaseProvider === 'atlas' ? 'Auto-generated (optional)' : 'Enter connection string'}
-              />
-            </div>
+                  <FormField id="reg-db-provider" label="Database Provider" error={fieldErrors['reg-db-provider']}>
+                    <SearchableSelect
+                      id="reg-db-provider"
+                      value={databaseProvider}
+                      invalid={Boolean(fieldErrors['reg-db-provider'])}
+                      onChange={(value) => {
+                        setDatabaseProvider(value)
+                        clearFieldError('reg-db-provider')
+                        clearFieldError('reg-connection')
+                      }}
+                      options={[
+                        { value: 'atlas', label: 'MongoDB Atlas' },
+                        { value: 'self-hosted', label: 'Self-Hosted' }
+                      ]}
+                    />
+                  </FormField>
+                  <FormField id="reg-plan" label="Subscription Plan" error={fieldErrors['reg-plan']}>
+                    <SearchableSelect
+                      id="reg-plan"
+                      value={subscriptionPlan}
+                      invalid={Boolean(fieldErrors['reg-plan'])}
+                      onChange={(value) => {
+                        setSubscriptionPlan(value)
+                        clearFieldError('reg-plan')
+                      }}
+                      options={[
+                        { value: 'basic', label: 'Basic' },
+                        { value: 'pro', label: 'Pro' },
+                        { value: 'enterprise', label: 'Enterprise' }
+                      ]}
+                    />
+                  </FormField>
+                  <FormField id="reg-atlas-project" label="Atlas Project Name" error={fieldErrors['reg-atlas-project']}>
+                    <Input
+                      id="reg-atlas-project"
+                      type="text"
+                      value={atlasProjectName}
+                      invalid={Boolean(fieldErrors['reg-atlas-project'])}
+                      onChange={(e) => {
+                        setAtlasProjectName(e.target.value)
+                        clearFieldError('reg-atlas-project')
+                      }}
+                      placeholder="Optional"
+                    />
+                  </FormField>
+                  <FormField id="reg-cluster" label="Cluster Name" error={fieldErrors['reg-cluster']}>
+                    <Input
+                      id="reg-cluster"
+                      type="text"
+                      value={clusterName}
+                      invalid={Boolean(fieldErrors['reg-cluster'])}
+                      onChange={(e) => {
+                        setClusterName(e.target.value)
+                        clearFieldError('reg-cluster')
+                      }}
+                      placeholder="Optional"
+                    />
+                  </FormField>
+                  <FormField id="reg-db-name" label="Database Name" error={fieldErrors['reg-db-name']}>
+                    <Input
+                      id="reg-db-name"
+                      type="text"
+                      value={databaseName}
+                      invalid={Boolean(fieldErrors['reg-db-name'])}
+                      onChange={(e) => {
+                        setDatabaseName(e.target.value)
+                        clearFieldError('reg-db-name')
+                      }}
+                      placeholder="Optional"
+                    />
+                  </FormField>
+                  <FormField
+                    id="reg-connection"
+                    label="Connection String"
+                    error={fieldErrors['reg-connection']}
+                    required={databaseProvider !== 'atlas'}
+                  >
+                    <Input
+                      id="reg-connection"
+                      type="text"
+                      value={connectionString}
+                      invalid={Boolean(fieldErrors['reg-connection'])}
+                      onChange={(e) => {
+                        setConnectionString(e.target.value)
+                        clearFieldError('reg-connection')
+                      }}
+                      placeholder={databaseProvider === 'atlas' ? 'Auto-generated (optional)' : 'Enter connection string'}
+                    />
+                  </FormField>
                 </div>
               </div>
 
               <div>
                 <h3 className="mb-3 text-lg font-semibold">Admin User</h3>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <Label htmlFor="reg-admin-name" className="mb-2 block">Name</Label>
-              <Input
-                id="reg-admin-name"
-                type="text"
-                value={userName}
-                onChange={(e) => setUserName(e.target.value)}
-                placeholder="Admin name"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="reg-admin-email" className="mb-2 block">Email</Label>
-              <Input
-                id="reg-admin-email"
-                type="email"
-                value={userEmail}
-                onChange={(e) => setUserEmail(e.target.value)}
-                placeholder="admin@example.com"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="reg-admin-password" className="mb-2 block">Password</Label>
-              <Input
-                id="reg-admin-password"
-                type="password"
-                value={userPassword}
-                onChange={(e) => setUserPassword(e.target.value)}
-                placeholder="Minimum 6 characters"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="reg-admin-phone" className="mb-2 block">Phone</Label>
-              <Input
-                id="reg-admin-phone"
-                type="text"
-                value={userPhone}
-                onChange={(e) => setUserPhone(e.target.value)}
-                placeholder="Enter phone number"
-                required
-              />
-            </div>
+                  <FormField id="reg-admin-name" label="Name" error={fieldErrors['reg-admin-name']} required>
+                    <Input
+                      id="reg-admin-name"
+                      type="text"
+                      value={userName}
+                      invalid={Boolean(fieldErrors['reg-admin-name'])}
+                      onChange={(e) => {
+                        setUserName(e.target.value)
+                        clearFieldError('reg-admin-name')
+                      }}
+                      placeholder="Admin name"
+                    />
+                  </FormField>
+                  <FormField id="reg-admin-email" label="Email" error={fieldErrors['reg-admin-email']} required>
+                    <Input
+                      id="reg-admin-email"
+                      type="email"
+                      value={userEmail}
+                      invalid={Boolean(fieldErrors['reg-admin-email'])}
+                      onChange={(e) => {
+                        setUserEmail(e.target.value)
+                        clearFieldError('reg-admin-email')
+                      }}
+                      placeholder="admin@example.com"
+                    />
+                  </FormField>
+                  <FormField id="reg-admin-password" label="Password" error={fieldErrors['reg-admin-password']} required>
+                    <Input
+                      id="reg-admin-password"
+                      type="password"
+                      value={userPassword}
+                      invalid={Boolean(fieldErrors['reg-admin-password'])}
+                      onChange={(e) => {
+                        setUserPassword(e.target.value)
+                        clearFieldError('reg-admin-password')
+                      }}
+                      placeholder="Minimum 6 characters"
+                    />
+                  </FormField>
+                  <FormField id="reg-admin-phone" label="Phone" error={fieldErrors['reg-admin-phone']} required>
+                    <Input
+                      id="reg-admin-phone"
+                      type="text"
+                      value={userPhone}
+                      invalid={Boolean(fieldErrors['reg-admin-phone'])}
+                      onChange={(e) => {
+                        setUserPhone(e.target.value)
+                        clearFieldError('reg-admin-phone')
+                      }}
+                      placeholder="Enter phone number"
+                    />
+                  </FormField>
                 </div>
               </div>
 

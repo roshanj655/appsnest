@@ -5,7 +5,8 @@ import PageHeader from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { FormField } from '@/components/FormField'
+import { emailMsg, isValidEmail, requiredMsg, useFieldErrors } from '@/lib/formValidation'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { isSuperAdmin } from '@/lib/auth'
@@ -106,6 +107,7 @@ const Businesses = () => {
   const [formData, setFormData] = useState<FormState>(emptyForm())
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
+  const { fieldErrors, clearFieldErrors, clearFieldError, showFieldErrors } = useFieldErrors()
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -157,6 +159,7 @@ const Businesses = () => {
     setPanel(mode)
     setErrorMessage('')
     setSuccessMessage('')
+    clearFieldErrors()
     setFormData({
       businessName: business.businessName || '',
       ownerName: business.ownerName || '',
@@ -178,6 +181,7 @@ const Businesses = () => {
     setPanel(null)
     setSelectedId(null)
     setFormData(emptyForm())
+    clearFieldErrors()
   }
 
   const requestToggleStatus = (business: Business) => {
@@ -242,6 +246,17 @@ const Businesses = () => {
     if (!selectedId) return
     setErrorMessage('')
     setSuccessMessage('')
+    clearFieldErrors()
+
+    if (panel === 'edit') {
+      const errors: Record<string, string> = {}
+      if (!formData.businessName.trim()) errors.businessName = requiredMsg('Business name')
+      if (!formData.ownerName.trim()) errors.ownerName = requiredMsg('Owner name')
+      if (!formData.email.trim()) errors.email = requiredMsg('Email')
+      else if (!isValidEmail(formData.email)) errors.email = emailMsg
+      if (!formData.phone.trim()) errors.phone = requiredMsg('Phone')
+      if (showFieldErrors(errors)) return
+    }
 
     try {
       if (panel === 'subscription') {
@@ -256,10 +271,6 @@ const Businesses = () => {
         )
         setSuccessMessage('Subscription period saved.')
       } else {
-        if (!formData.businessName.trim() || !formData.ownerName.trim() || !formData.email.trim() || !formData.phone.trim()) {
-          setErrorMessage('Business name, owner, email, and phone are required.')
-          return
-        }
         await axios.put(`/api/businesses/${selectedId}`, formData, authHeaders())
         setSuccessMessage('Business details saved.')
       }
@@ -312,121 +323,153 @@ const Businesses = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form noValidate onSubmit={handleSubmit} className="space-y-5">
               {panel === 'edit' && (
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="businessName">Business name</Label>
+                  <FormField id="businessName" label="Business name" error={fieldErrors.businessName} required>
                     <Input
                       id="businessName"
                       value={formData.businessName}
-                      onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
-                      required
+                      invalid={Boolean(fieldErrors.businessName)}
+                      onChange={(e) => {
+                        setFormData({ ...formData, businessName: e.target.value })
+                        clearFieldError('businessName')
+                      }}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="ownerName">Owner name</Label>
+                  </FormField>
+                  <FormField id="ownerName" label="Owner name" error={fieldErrors.ownerName} required>
                     <Input
                       id="ownerName"
                       value={formData.ownerName}
-                      onChange={(e) => setFormData({ ...formData, ownerName: e.target.value })}
-                      required
+                      invalid={Boolean(fieldErrors.ownerName)}
+                      onChange={(e) => {
+                        setFormData({ ...formData, ownerName: e.target.value })
+                        clearFieldError('ownerName')
+                      }}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
+                  </FormField>
+                  <FormField id="email" label="Email" error={fieldErrors.email} required>
                     <Input
                       id="email"
                       type="email"
                       value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      required
+                      invalid={Boolean(fieldErrors.email)}
+                      onChange={(e) => {
+                        setFormData({ ...formData, email: e.target.value })
+                        clearFieldError('email')
+                      }}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone</Label>
+                  </FormField>
+                  <FormField id="phone" label="Phone" error={fieldErrors.phone} required>
                     <Input
                       id="phone"
                       value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      required
+                      invalid={Boolean(fieldErrors.phone)}
+                      onChange={(e) => {
+                        setFormData({ ...formData, phone: e.target.value })
+                        clearFieldError('phone')
+                      }}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="address">Address</Label>
+                  </FormField>
+                  <FormField id="address" label="Address" error={fieldErrors.address}>
                     <Input
                       id="address"
                       value={formData.address}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                      invalid={Boolean(fieldErrors.address)}
+                      onChange={(e) => {
+                        setFormData({ ...formData, address: e.target.value })
+                        clearFieldError('address')
+                      }}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="city">City</Label>
+                  </FormField>
+                  <FormField id="city" label="City" error={fieldErrors.city}>
                     <Input
                       id="city"
                       value={formData.city}
-                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      invalid={Boolean(fieldErrors.city)}
+                      onChange={(e) => {
+                        setFormData({ ...formData, city: e.target.value })
+                        clearFieldError('city')
+                      }}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="state">State</Label>
+                  </FormField>
+                  <FormField id="state" label="State" error={fieldErrors.state}>
                     <Input
                       id="state"
                       value={formData.state}
-                      onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                      invalid={Boolean(fieldErrors.state)}
+                      onChange={(e) => {
+                        setFormData({ ...formData, state: e.target.value })
+                        clearFieldError('state')
+                      }}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="pincode">Pincode</Label>
+                  </FormField>
+                  <FormField id="pincode" label="Pincode" error={fieldErrors.pincode}>
                     <Input
                       id="pincode"
                       value={formData.pincode}
-                      onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                      invalid={Boolean(fieldErrors.pincode)}
+                      onChange={(e) => {
+                        setFormData({ ...formData, pincode: e.target.value })
+                        clearFieldError('pincode')
+                      }}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="businessType">Business type</Label>
+                  </FormField>
+                  <FormField id="businessType" label="Business type" error={fieldErrors.businessType}>
                     <Input
                       id="businessType"
                       value={formData.businessType}
-                      onChange={(e) => setFormData({ ...formData, businessType: e.target.value })}
+                      invalid={Boolean(fieldErrors.businessType)}
+                      onChange={(e) => {
+                        setFormData({ ...formData, businessType: e.target.value })
+                        clearFieldError('businessType')
+                      }}
                     />
-                  </div>
+                  </FormField>
                 </div>
               )}
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="subscriptionPlan">Plan</Label>
+                <FormField id="subscriptionPlan" label="Plan" error={fieldErrors.subscriptionPlan}>
                   <SearchableSelect
                     id="subscriptionPlan"
                     value={formData.subscriptionPlan}
-                    onChange={(subscriptionPlan) => setFormData({ ...formData, subscriptionPlan })}
+                    invalid={Boolean(fieldErrors.subscriptionPlan)}
+                    onChange={(subscriptionPlan) => {
+                      setFormData({ ...formData, subscriptionPlan })
+                      clearFieldError('subscriptionPlan')
+                    }}
                     options={[
                       { value: 'basic', label: 'Basic' },
                       { value: 'pro', label: 'Pro' },
                       { value: 'enterprise', label: 'Enterprise' }
                     ]}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="subscriptionStartsAt">Starts</Label>
+                </FormField>
+                <FormField id="subscriptionStartsAt" label="Starts" error={fieldErrors.subscriptionStartsAt}>
                   <Input
                     id="subscriptionStartsAt"
                     type="date"
                     value={formData.subscriptionStartsAt}
-                    onChange={(e) => setFormData({ ...formData, subscriptionStartsAt: e.target.value })}
+                    invalid={Boolean(fieldErrors.subscriptionStartsAt)}
+                    onChange={(e) => {
+                      setFormData({ ...formData, subscriptionStartsAt: e.target.value })
+                      clearFieldError('subscriptionStartsAt')
+                    }}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="subscriptionEndsAt">Ends</Label>
+                </FormField>
+                <FormField id="subscriptionEndsAt" label="Ends" error={fieldErrors.subscriptionEndsAt}>
                   <Input
                     id="subscriptionEndsAt"
                     type="date"
                     value={formData.subscriptionEndsAt}
-                    onChange={(e) => setFormData({ ...formData, subscriptionEndsAt: e.target.value })}
+                    invalid={Boolean(fieldErrors.subscriptionEndsAt)}
+                    onChange={(e) => {
+                      setFormData({ ...formData, subscriptionEndsAt: e.target.value })
+                      clearFieldError('subscriptionEndsAt')
+                    }}
                   />
-                </div>
+                </FormField>
               </div>
 
               <div className="flex justify-end gap-3">

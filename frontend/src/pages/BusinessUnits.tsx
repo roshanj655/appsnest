@@ -3,12 +3,13 @@ import axios from 'axios'
 import PageHeader from '../components/PageHeader'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import RecordActions from '@/components/RecordActions'
+import { FormField } from '@/components/FormField'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { authHeaders, listItems, listParams } from '@/lib/api'
+import { requiredMsg, useFieldErrors } from '@/lib/formValidation'
 import ExcelImport from '@/components/ExcelImport'
 
 type BusinessUnit = {
@@ -33,6 +34,7 @@ const BusinessUnits = () => {
   const [confirmKind, setConfirmKind] = useState<ConfirmKind | null>(null)
   const [confirmRow, setConfirmRow] = useState<BusinessUnit | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
+  const { fieldErrors, clearFieldErrors, clearFieldError, showFieldErrors } = useFieldErrors()
 
   const fetchUnits = async () => {
     try {
@@ -51,12 +53,14 @@ const BusinessUnits = () => {
     setShowForm(false)
     setEditingId(null)
     setFormData(emptyForm)
+    clearFieldErrors()
   }
 
   const openCreate = () => {
     setEditingId(null)
     setFormData(emptyForm)
     setErrorMessage('')
+    clearFieldErrors()
     setShowForm(true)
   }
 
@@ -64,16 +68,18 @@ const BusinessUnits = () => {
     setEditingId(unit._id)
     setFormData({ name: unit.name, code: unit.code, notes: unit.notes || '' })
     setErrorMessage('')
+    clearFieldErrors()
     setShowForm(true)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMessage('')
-    if (!formData.name.trim() || !formData.code.trim()) {
-      setErrorMessage('Name and code are required.')
-      return
-    }
+    clearFieldErrors()
+    const errors: Record<string, string> = {}
+    if (!formData.name.trim()) errors['unit-name'] = requiredMsg('Name')
+    if (!formData.code.trim()) errors['unit-code'] = requiredMsg('Code')
+    if (showFieldErrors(errors)) return
     const payload = {
       name: formData.name.trim(),
       code: formData.code.trim().toUpperCase(),
@@ -156,37 +162,44 @@ const BusinessUnits = () => {
                 />
               </div>
             )}
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} noValidate className="space-y-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="unit-name">Name</Label>
+                <FormField id="unit-name" label="Name" error={fieldErrors['unit-name']} required>
                   <Input
                     id="unit-name"
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    onChange={(e) => {
+                      clearFieldError('unit-name')
+                      setFormData({ ...formData, name: e.target.value })
+                    }}
                     placeholder="Disposable"
-                    required
+                    invalid={Boolean(fieldErrors['unit-name'])}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="unit-code">Code</Label>
+                </FormField>
+                <FormField id="unit-code" label="Code" error={fieldErrors['unit-code']} required>
                   <Input
                     id="unit-code"
                     value={formData.code}
-                    onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
+                    onChange={(e) => {
+                      clearFieldError('unit-code')
+                      setFormData({ ...formData, code: e.target.value.toUpperCase() })
+                    }}
                     placeholder="DISP"
-                    required
+                    invalid={Boolean(fieldErrors['unit-code'])}
                   />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="unit-notes">Notes</Label>
+                </FormField>
+                <FormField id="unit-notes" label="Notes" error={fieldErrors['unit-notes']} className="md:col-span-2">
                   <Input
                     id="unit-notes"
                     value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    onChange={(e) => {
+                      clearFieldError('unit-notes')
+                      setFormData({ ...formData, notes: e.target.value })
+                    }}
                     placeholder="Optional"
+                    invalid={Boolean(fieldErrors['unit-notes'])}
                   />
-                </div>
+                </FormField>
               </div>
               <div className="flex justify-end gap-3">
                 <Button type="button" variant="outline" onClick={closeForm}>Cancel</Button>

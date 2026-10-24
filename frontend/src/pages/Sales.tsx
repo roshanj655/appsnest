@@ -8,7 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import RecordActions from '@/components/RecordActions'
+import { FormField, FieldError } from '@/components/FormField'
 import { authHeaders, listItems, listParams } from '@/lib/api'
+import { emailMsg, isValidEmail, requiredMsg, useFieldErrors } from '@/lib/formValidation'
 import { BusinessUnitSelect, defaultUnitFormValue } from '@/components/BusinessUnitSelect'
 import { printPosReceipt } from '@/lib/print'
 import SearchableSelect, { partySelectOption, productSelectOption } from '@/components/SearchableSelect'
@@ -18,11 +20,13 @@ interface FormItem {
   variantId: string
   quantity: number
   sellingPrice: number
+  maxSellingPrice: number
   actualSoldAmount: number
   price: number
   discount: number
   gst: number
   total: number
+  priceOverrideReason: string
 }
 
 const Sales = () => {
@@ -48,14 +52,33 @@ const Sales = () => {
     businessUnitId: string
     items: FormItem[]
     paymentMode: string
+    paidAmount: number
     status: string
   }>({
     customerId: '',
     businessUnitId: defaultUnitFormValue(),
     items: [],
     paymentMode: 'cash',
+    paidAmount: 0,
     status: 'completed'
   })
+  const [paymentSale, setPaymentSale] = useState<any>(null)
+  const [paymentForm, setPaymentForm] = useState({ amount: 0, method: 'cash', reference: '', notes: '' })
+  const [paymentBusy, setPaymentBusy] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
+  const { fieldErrors, clearFieldErrors, clearFieldError, showFieldErrors } = useFieldErrors()
+  const {
+    fieldErrors: paymentFieldErrors,
+    clearFieldErrors: clearPaymentFieldErrors,
+    clearFieldError: clearPaymentFieldError,
+    showFieldErrors: showPaymentFieldErrors
+  } = useFieldErrors()
+  const {
+    fieldErrors: emailFieldErrors,
+    clearFieldErrors: clearEmailFieldErrors,
+    clearFieldError: clearEmailFieldError,
+    showFieldErrors: showEmailFieldErrors
+  } = useFieldErrors()
 
   useEffect(() => {
     fetchData()
@@ -80,7 +103,7 @@ const Sales = () => {
   const addItem = () => {
     setFormData({
       ...formData,
-      items: [...formData.items, { productId: '', variantId: '', quantity: 1, sellingPrice: 0, actualSoldAmount: 0, price: 0, discount: 0, gst: 0, total: 0 }]
+      items: [...formData.items, { productId: '', variantId: '', quantity: 1, sellingPrice: 0, maxSellingPrice: 0, actualSoldAmount: 0, price: 0, discount: 0, gst: 0, total: 0, priceOverrideReason: '' }]
     })
   }
 
@@ -103,14 +126,17 @@ const Sales = () => {
         if (variants.length === 1) {
           newItems[index].variantId = String(variants[0]._id)
           newItems[index].sellingPrice = variants[0].sellingPrice
+          newItems[index].maxSellingPrice = variants[0].maxSellingPrice || product.maxSellingPrice || variants[0].sellingPrice
           newItems[index].actualSoldAmount = variants[0].sellingPrice
           newItems[index].price = variants[0].sellingPrice
         } else if (!variants.length) {
           newItems[index].sellingPrice = product.sellingPrice
+          newItems[index].maxSellingPrice = product.maxSellingPrice || product.sellingPrice
           newItems[index].actualSoldAmount = product.sellingPrice
           newItems[index].price = product.sellingPrice
         } else {
           newItems[index].sellingPrice = 0
+          newItems[index].maxSellingPrice = product.maxSellingPrice || 0
           newItems[index].actualSoldAmount = 0
           newItems[index].price = 0
         }
@@ -122,6 +148,7 @@ const Sales = () => {
       const variant = (product?.variants || []).find((row: any) => String(row._id) === String(value))
       if (variant) {
         newItems[index].sellingPrice = variant.sellingPrice
+        newItems[index].maxSellingPrice = variant.maxSellingPrice || product.maxSellingPrice || variant.sellingPrice
         newItems[index].actualSoldAmount = variant.sellingPrice
         newItems[index].price = variant.sellingPrice
         newItems[index].gst = product.gst || 0
@@ -162,6 +189,40 @@ const Sales = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setInvoiceError('')
+    clearFieldErrors()
+    const errors: Record<string, string> = {}
+    if (!formData.paymentMode) errors['sale-payment'] = requiredMsg('Payment mode')
+    if (formData.paidAmount < 0) errors['sale-paid'] = 'Amount received cannot be negative.'
+    if (!formData.items.length) {
+      errors['sale-items'] = 'Add at least one product line to this sale.'
+    } else {
+      formData.items.forEach((item, index) => {
+        if (!item.productId) errors[`sale-item-${index}-product`] = requiredMsg('Product')
+        const product = products.find((row: any) => row._id === item.productId)
+        const variants = product?.variants || []
+        if (item.productId && variants.length && !item.variantId) {
+          errors[`sale-item-${index}-variant`] = requiredMsg('Variant')
+        }
+        if (!item.quantity || item.quantity <= 0) {
+          errors[`sale-item-${index}-qty`] = 'Quantity must be greater than zero.'
+        }
+        if (item.actualSoldAmount < 0) {
+          errors[`sale-item-${index}-price`] = 'Actual unit price cannot be negative.'
+        }
+        if (item.discount < 0) {
+          errors[`sale-item-${index}-discount`] = 'Discount cannot be negative.'
+        }
+        if (
+          item.maxSellingPrice > 0 &&
+          item.actualSoldAmount > item.maxSellingPrice &&
+          !String(item.priceOverrideReason || '').trim()
+        ) {
+          errors[`sale-item-${index}-override`] = 'Override reason is required when price exceeds max.'
+        }
+      })
+    }
+    if (showFieldErrors(errors)) return
     try {
       const token = localStorage.getItem('token')
       const totals = calculateTotals()
@@ -171,6 +232,7 @@ const Sales = () => {
       formDataObj.append('businessUnitId', formData.businessUnitId)
       formDataObj.append('items', JSON.stringify(formData.items))
       formDataObj.append('paymentMode', formData.paymentMode)
+      formDataObj.append('paidAmount', String(formData.paidAmount))
       formDataObj.append('status', formData.status)
       formDataObj.append('subtotal', totals.subtotal.toString())
       formDataObj.append('discount', totals.totalDiscount.toString())
@@ -186,6 +248,7 @@ const Sales = () => {
           customerId: formData.customerId,
           items: formData.items,
           paymentMode: formData.paymentMode,
+          paidAmount: formData.paidAmount,
           status: formData.status,
           subtotal: totals.subtotal,
           discount: totals.totalDiscount,
@@ -199,16 +262,63 @@ const Sales = () => {
       }
       setShowForm(false)
       setEditingId(null)
-      setFormData({ customerId: '', businessUnitId: defaultUnitFormValue(), items: [], paymentMode: 'cash', status: 'completed' })
+      clearFieldErrors()
+      setFormData({ customerId: '', businessUnitId: defaultUnitFormValue(), items: [], paymentMode: 'cash', paidAmount: 0, status: 'completed' })
       setSelectedFiles([])
       fetchData()
-    } catch (err) {
+    } catch (err: any) {
+      setInvoiceError(err.response?.data?.message || 'Unable to save sale.')
       console.error(err)
+    }
+  }
+
+  const openCollectPayment = (sale: any) => {
+    setPaymentSale(sale)
+    setPaymentError('')
+    clearPaymentFieldErrors()
+    setPaymentForm({
+      amount: Number(sale.outstandingAmount || Math.max(0, Number(sale.total || 0) - Number(sale.amountReceived ?? sale.paidAmount ?? 0))),
+      method: sale.paymentMode || 'cash',
+      reference: '',
+      notes: ''
+    })
+  }
+
+  const submitPayment = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    if (!paymentSale) return
+    setPaymentError('')
+    clearPaymentFieldErrors()
+    const outstanding = Number(paymentSale.outstandingAmount || 0)
+    const errors: Record<string, string> = {}
+    if (!paymentForm.amount || paymentForm.amount <= 0) {
+      errors['pay-amount'] = 'Payment amount must be greater than zero.'
+    } else if (paymentForm.amount > outstanding + 0.009) {
+      errors['pay-amount'] = `Amount cannot exceed outstanding ₹${outstanding.toFixed(2)}.`
+    }
+    if (!paymentForm.method) errors['pay-method'] = requiredMsg('Payment method')
+    if (showPaymentFieldErrors(errors)) return
+    setPaymentBusy(true)
+    try {
+      await axios.post(
+        `/api/sales/${paymentSale._id}/payments`,
+        paymentForm,
+        authHeaders()
+      )
+      setPaymentSale(null)
+      clearPaymentFieldErrors()
+      fetchData()
+    } catch (err: any) {
+      setPaymentError(err.response?.data?.message || 'Unable to record payment.')
+    } finally {
+      setPaymentBusy(false)
     }
   }
 
   const openEdit = (sale: any) => {
     setEditingId(sale._id)
+    setInvoiceError('')
+    clearFieldErrors()
     setFormData({
       customerId: sale.customerId?._id || sale.customerId || '',
       businessUnitId: sale.businessUnitId?._id || sale.businessUnitId || defaultUnitFormValue(),
@@ -217,13 +327,16 @@ const Sales = () => {
         variantId: item.variantId ? String(item.variantId) : '',
         quantity: item.quantity,
         sellingPrice: item.sellingPrice ?? item.price,
+        maxSellingPrice: item.maxSellingPrice || item.sellingPrice || item.price || 0,
         actualSoldAmount: item.actualSoldAmount ?? item.price,
         price: item.actualSoldAmount ?? item.price,
         discount: item.discount || 0,
         gst: item.gst || 0,
-        total: item.total
+        total: item.total,
+        priceOverrideReason: item.priceOverrideReason || ''
       })),
       paymentMode: sale.paymentMode || 'cash',
+      paidAmount: Number(sale.amountReceived ?? sale.paidAmount ?? 0),
       status: sale.status || 'completed'
     })
     setShowForm(true)
@@ -313,13 +426,15 @@ const Sales = () => {
     }
   }
 
-  const sendEmail = async () => {
+  const sendEmail = async (e?: React.FormEvent) => {
+    e?.preventDefault()
     if (!selectedSale) return
-    if (!emailTo.trim() || !emailTo.includes('@')) {
-      setEmailError('Enter a valid recipient email.')
-      return
-    }
     setEmailError('')
+    clearEmailFieldErrors()
+    const errors: Record<string, string> = {}
+    if (!emailTo.trim()) errors['sale-email-to'] = requiredMsg('Recipient email')
+    else if (!isValidEmail(emailTo)) errors['sale-email-to'] = emailMsg
+    if (showEmailFieldErrors(errors)) return
     setEmailBusy(true)
     try {
       const token = localStorage.getItem('token')
@@ -331,6 +446,7 @@ const Sales = () => {
       setShowEmailDialog(false)
       setSelectedSale(null)
       setEmailTo('')
+      clearEmailFieldErrors()
     } catch (err: any) {
       setEmailError(err.response?.data?.message || 'Failed to send invoice.')
     } finally {
@@ -371,9 +487,12 @@ const Sales = () => {
             if (showForm) {
               setShowForm(false)
               setEditingId(null)
+              clearFieldErrors()
             } else {
               setEditingId(null)
-              setFormData({ customerId: '', businessUnitId: defaultUnitFormValue(), items: [], paymentMode: 'cash', status: 'completed' })
+              setInvoiceError('')
+              clearFieldErrors()
+              setFormData({ customerId: '', businessUnitId: defaultUnitFormValue(), items: [], paymentMode: 'cash', paidAmount: 0, status: 'completed' })
               setShowForm(true)
             }
           }}>
@@ -392,30 +511,39 @@ const Sales = () => {
             <CardTitle className="text-lg">{editingId ? 'Edit Sale' : 'Create New Sale'}</CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} noValidate className="space-y-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="customer" className="text-xs font-semibold">Customer</Label>
+                <FormField id="sale-customer" label="Customer" error={fieldErrors['sale-customer']}>
                   <SearchableSelect
-                    id="customer"
+                    id="sale-customer"
                     value={formData.customerId}
-                    onChange={(customerId) => setFormData({ ...formData, customerId })}
+                    onChange={(customerId) => {
+                      clearFieldError('sale-customer')
+                      setFormData({ ...formData, customerId })
+                    }}
                     placeholder="Select customer"
                     searchPlaceholder="Search name, phone, or address…"
                     emptyLabel="Walk-in / no customer"
                     options={customers.map(partySelectOption)}
+                    invalid={Boolean(fieldErrors['sale-customer'])}
                   />
-                </div>
+                </FormField>
                 <BusinessUnitSelect
                   value={formData.businessUnitId}
-                  onChange={(businessUnitId) => setFormData({ ...formData, businessUnitId })}
+                  onChange={(businessUnitId) => {
+                    clearFieldError('business-unit')
+                    setFormData({ ...formData, businessUnitId })
+                  }}
+                  error={fieldErrors['business-unit']}
                 />
-                <div className="space-y-1.5">
-                  <Label htmlFor="payment" className="text-xs font-semibold">Payment Mode</Label>
+                <FormField id="sale-payment" label="Payment Mode" error={fieldErrors['sale-payment']} required>
                   <SearchableSelect
-                    id="payment"
+                    id="sale-payment"
                     value={formData.paymentMode}
-                    onChange={(paymentMode) => setFormData({ ...formData, paymentMode })}
+                    onChange={(paymentMode) => {
+                      clearFieldError('sale-payment')
+                      setFormData({ ...formData, paymentMode })
+                    }}
                     options={[
                       { value: 'cash', label: 'Cash' },
                       { value: 'card', label: 'Card' },
@@ -423,8 +551,9 @@ const Sales = () => {
                       { value: 'bank', label: 'Bank Transfer' },
                       { value: 'credit', label: 'Credit' }
                     ]}
+                    invalid={Boolean(fieldErrors['sale-payment'])}
                   />
-                </div>
+                </FormField>
               </div>
 
               <div className="space-y-1.5">
@@ -449,11 +578,13 @@ const Sales = () => {
                         variantId: variant?._id ? String(variant._id) : '',
                         quantity: 1,
                         sellingPrice: variant ? variant.sellingPrice : product.sellingPrice,
+                        maxSellingPrice: (variant?.maxSellingPrice || product.maxSellingPrice || (variant ? variant.sellingPrice : product.sellingPrice)) as number,
                         actualSoldAmount: variant ? variant.sellingPrice : product.sellingPrice,
                         price: variant ? variant.sellingPrice : product.sellingPrice,
                         discount: 0,
                         gst: product.gst || 0,
-                        total: 0
+                        total: 0,
+                        priceOverrideReason: ''
                       }
                       line.total = (line.price * line.quantity) + (line.price * line.quantity * line.gst / 100)
                       const emptyIndex = formData.items.findIndex((item) => !item.productId)
@@ -472,14 +603,15 @@ const Sales = () => {
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2" data-field="sale-items">
                 <div className="flex justify-between items-center">
-                  <Label className="text-xs font-semibold">Items</Label>
-                  <Button type="button" variant="secondary" onClick={addItem}>
+                  <Label className="text-xs font-semibold">Items{formData.items.length === 0 ? <span className="text-red-600"> *</span> : null}</Label>
+                  <Button type="button" variant="secondary" onClick={() => { clearFieldError('sale-items'); addItem() }}>
                     + Add Item
                   </Button>
                 </div>
-                {formData.items.length === 0 && (
+                <FieldError id="sale-items" error={fieldErrors['sale-items']} />
+                {formData.items.length === 0 && !fieldErrors['sale-items'] && (
                   <p className="text-sm text-muted-foreground">Add at least one product line to this sale.</p>
                 )}
                 {formData.items.map((item: any, index: number) => (
@@ -494,99 +626,164 @@ const Sales = () => {
                     >
                       Close
                     </Button>
-                    <div className="space-y-1.5 col-span-2 md:col-span-1">
-                      <Label htmlFor={`sale-product-${index}`} className="text-xs font-semibold">Product</Label>
+                    <FormField
+                      id={`sale-item-${index}-product`}
+                      label="Product"
+                      error={fieldErrors[`sale-item-${index}-product`]}
+                      required
+                      className="col-span-2 md:col-span-1"
+                    >
                       <SearchableSelect
-                        id={`sale-product-${index}`}
+                        id={`sale-item-${index}-product`}
                         value={item.productId}
-                        onChange={(productId) => updateItem(index, 'productId', productId)}
+                        onChange={(productId) => {
+                          clearFieldError(`sale-item-${index}-product`)
+                          clearFieldError(`sale-item-${index}-variant`)
+                          updateItem(index, 'productId', productId)
+                        }}
                         placeholder="Select product"
                         searchPlaceholder="Search name, SKU, or barcode…"
-                        required
                         options={products.map(productSelectOption)}
+                        invalid={Boolean(fieldErrors[`sale-item-${index}-product`])}
                       />
-                    </div>
+                    </FormField>
                     {(() => {
                       const product = products.find((row: any) => row._id === item.productId)
                       const variants = product?.variants || []
                       if (!variants.length) return null
                       return (
-                        <div className="space-y-1.5 col-span-2 md:col-span-1">
-                          <Label htmlFor={`sale-variant-${index}`} className="text-xs font-semibold">Variant</Label>
+                        <FormField
+                          id={`sale-item-${index}-variant`}
+                          label="Variant"
+                          error={fieldErrors[`sale-item-${index}-variant`]}
+                          required
+                          className="col-span-2 md:col-span-1"
+                        >
                           <SearchableSelect
-                            id={`sale-variant-${index}`}
+                            id={`sale-item-${index}-variant`}
                             value={item.variantId}
-                            onChange={(variantId) => updateItem(index, 'variantId', variantId)}
+                            onChange={(variantId) => {
+                              clearFieldError(`sale-item-${index}-variant`)
+                              updateItem(index, 'variantId', variantId)
+                            }}
                             placeholder="Select variant"
-                            required
                             options={variants.map((variant: any) => ({
                               value: String(variant._id),
                               label: variant.name,
                               description: `Stock ${variant.stock}${variant.sku ? ` · ${variant.sku}` : ''}`,
                               searchText: `${variant.name} ${variant.sku || ''} ${variant.barcode || ''}`
                             }))}
+                            invalid={Boolean(fieldErrors[`sale-item-${index}-variant`])}
                           />
-                        </div>
+                        </FormField>
                       )
                     })()}
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`sale-qty-${index}`} className="text-xs font-semibold">Quantity</Label>
+                    <FormField id={`sale-item-${index}-qty`} label="Quantity" error={fieldErrors[`sale-item-${index}-qty`]} required>
                       <Input
-                        id={`sale-qty-${index}`}
+                        id={`sale-item-${index}-qty`}
                         type="number"
                         min={1}
                         value={item.quantity}
-                        onChange={(e) => updateItem(index, 'quantity', e.target.value === '' ? 0 : Number(e.target.value))}
-                        required
+                        onChange={(e) => {
+                          clearFieldError(`sale-item-${index}-qty`)
+                          updateItem(index, 'quantity', e.target.value === '' ? 0 : Number(e.target.value))
+                        }}
+                        invalid={Boolean(fieldErrors[`sale-item-${index}-qty`])}
                       />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`sale-list-${index}`} className="text-xs font-semibold">Selling Price</Label>
-                      <Input id={`sale-list-${index}`} type="number" value={item.sellingPrice} readOnly />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`sale-actual-${index}`} className="text-xs font-semibold">Actual Sold Amount</Label>
+                    </FormField>
+                    <FormField id={`sale-item-${index}-list`} label="Default Price">
+                      <Input id={`sale-item-${index}-list`} type="number" value={item.sellingPrice} readOnly />
+                    </FormField>
+                    <FormField id={`sale-item-${index}-max`} label="Max Price">
+                      <Input id={`sale-item-${index}-max`} type="number" value={item.maxSellingPrice || 0} readOnly />
+                    </FormField>
+                    <FormField id={`sale-item-${index}-price`} label="Actual Unit Price" error={fieldErrors[`sale-item-${index}-price`]}>
                       <Input
-                        id={`sale-actual-${index}`}
+                        id={`sale-item-${index}-price`}
                         type="number"
                         min={0}
                         step="0.01"
                         value={item.actualSoldAmount}
-                        onChange={(e) => updateItem(index, 'actualSoldAmount', e.target.value === '' ? 0 : Number(e.target.value))}
+                        onChange={(e) => {
+                          clearFieldError(`sale-item-${index}-price`)
+                          clearFieldError(`sale-item-${index}-override`)
+                          updateItem(index, 'actualSoldAmount', e.target.value === '' ? 0 : Number(e.target.value))
+                        }}
+                        invalid={Boolean(fieldErrors[`sale-item-${index}-price`])}
                       />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`sale-discount-${index}`} className="text-xs font-semibold">Discount</Label>
+                    </FormField>
+                    {item.maxSellingPrice > 0 && item.actualSoldAmount > item.maxSellingPrice && (
+                      <FormField
+                        id={`sale-item-${index}-override`}
+                        label="Override reason"
+                        error={fieldErrors[`sale-item-${index}-override`]}
+                        required
+                        className="col-span-2 md:col-span-1"
+                      >
+                        <Input
+                          id={`sale-item-${index}-override`}
+                          placeholder="Override reason required"
+                          value={item.priceOverrideReason}
+                          onChange={(e) => {
+                            clearFieldError(`sale-item-${index}-override`)
+                            updateItem(index, 'priceOverrideReason', e.target.value)
+                          }}
+                          invalid={Boolean(fieldErrors[`sale-item-${index}-override`])}
+                        />
+                      </FormField>
+                    )}
+                    <FormField id={`sale-item-${index}-discount`} label="Discount" error={fieldErrors[`sale-item-${index}-discount`]}>
                       <Input
-                        id={`sale-discount-${index}`}
+                        id={`sale-item-${index}-discount`}
                         type="number"
                         min={0}
                         step="0.01"
                         value={item.discount}
-                        onChange={(e) => updateItem(index, 'discount', e.target.value === '' ? 0 : Number(e.target.value))}
+                        onChange={(e) => {
+                          clearFieldError(`sale-item-${index}-discount`)
+                          updateItem(index, 'discount', e.target.value === '' ? 0 : Number(e.target.value))
+                        }}
+                        invalid={Boolean(fieldErrors[`sale-item-${index}-discount`])}
                       />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`sale-gst-${index}`} className="text-xs font-semibold">GST %</Label>
+                    </FormField>
+                    <FormField id={`sale-item-${index}-gst`} label="GST %">
                       <Input
-                        id={`sale-gst-${index}`}
+                        id={`sale-item-${index}-gst`}
                         type="number"
                         min={0}
                         step="0.01"
                         value={item.gst}
                         onChange={(e) => updateItem(index, 'gst', e.target.value === '' ? 0 : Number(e.target.value))}
                       />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`sale-total-${index}`} className="text-xs font-semibold">Line Total</Label>
-                      <Input id={`sale-total-${index}`} type="number" value={item.total} readOnly className="bg-gray-100" />
-                    </div>
+                    </FormField>
+                    <FormField id={`sale-item-${index}-total`} label="Line Total">
+                      <Input id={`sale-item-${index}-total`} type="number" value={item.total} readOnly className="bg-gray-100" />
+                    </FormField>
                   </div>
                 ))}
               </div>
 
-              <div className="flex justify-end">
-                <div className="w-full md:w-64 space-y-1">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <FormField
+                  id="sale-paid"
+                  label="Amount received now"
+                  error={fieldErrors['sale-paid']}
+                  hint="Leave below invoice total for partial/credit. Gross profit uses actual prices, not cash received."
+                >
+                  <Input
+                    id="sale-paid"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={formData.paidAmount}
+                    onChange={(e) => {
+                      clearFieldError('sale-paid')
+                      setFormData({ ...formData, paidAmount: e.target.value === '' ? 0 : Number(e.target.value) })
+                    }}
+                    invalid={Boolean(fieldErrors['sale-paid'])}
+                  />
+                </FormField>
+                <div className="w-full space-y-1 md:justify-self-end md:w-64">
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
                     <span>₹{totals.subtotal.toFixed(2)}</span>
@@ -602,6 +799,10 @@ const Sales = () => {
                   <div className="flex justify-between font-bold border-t pt-1">
                     <span>Total:</span>
                     <span>₹{totals.total.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-amber-700">
+                    <span>Outstanding after save:</span>
+                    <span>₹{Math.max(0, totals.total - Number(formData.paidAmount || 0)).toFixed(2)}</span>
                   </div>
                 </div>
               </div>
@@ -646,7 +847,9 @@ const Sales = () => {
                   <TableHead>Customer</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Total</TableHead>
-                  <TableHead>Payment</TableHead>
+                  <TableHead>Received</TableHead>
+                  <TableHead>Outstanding</TableHead>
+                  <TableHead>Pay status</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Attachments</TableHead>
                   <TableHead>Actions</TableHead>
@@ -658,8 +861,20 @@ const Sales = () => {
                     <TableCell className="font-medium">{sale.invoiceNumber}</TableCell>
                     <TableCell>{sale.customerId?.name || 'Walk-in'}</TableCell>
                     <TableCell>{new Date(sale.createdAt).toLocaleDateString()}</TableCell>
-                    <TableCell>₹{sale.total.toFixed(2)}</TableCell>
-                    <TableCell>{sale.paymentMode}</TableCell>
+                    <TableCell>₹{Number(sale.total || 0).toFixed(2)}</TableCell>
+                    <TableCell>₹{Number(sale.amountReceived ?? sale.paidAmount ?? 0).toFixed(2)}</TableCell>
+                    <TableCell>₹{Number(sale.outstandingAmount ?? 0).toFixed(2)}</TableCell>
+                    <TableCell>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        sale.paymentStatus === 'paid'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : sale.paymentStatus === 'partially_paid'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-red-100 text-red-700'
+                      }`}>
+                        {(sale.paymentStatus || 'unpaid').replace('_', ' ')}
+                      </span>
+                    </TableCell>
                     <TableCell>
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${sale.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
                         {sale.status}
@@ -689,6 +904,16 @@ const Sales = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
+                        {Number(sale.outstandingAmount || 0) > 0 && sale.status !== 'cancelled' && (
+                          <Button
+                            variant="link"
+                            size="sm"
+                            onClick={() => openCollectPayment(sale)}
+                            className="text-xs p-0 h-auto text-emerald-700"
+                          >
+                            Collect payment
+                          </Button>
+                        )}
                         <Button
                           variant="link"
                           size="sm"
@@ -723,6 +948,7 @@ const Sales = () => {
                             setSelectedSale(sale)
                             setEmailTo(sale.customerId?.email || '')
                             setEmailError('')
+                            clearEmailFieldErrors()
                             setShowEmailDialog(true)
                           }}
                           className="text-xs p-0 h-auto text-emerald-600"
@@ -759,37 +985,43 @@ const Sales = () => {
             <CardHeader>
               <CardTitle className="text-lg">Send Invoice</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1">
-                <Label htmlFor="emailTo">To:</Label>
-                <Input
-                  id="emailTo"
-                  type="email"
-                  value={emailTo}
-                  onChange={(e) => setEmailTo(e.target.value)}
-                  placeholder="email@example.com"
-                  required
-                />
-              </div>
+            <CardContent>
               {emailError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{emailError}</div>
+                <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{emailError}</div>
               )}
-              <div className="flex gap-2 justify-end">
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setShowEmailDialog(false)
-                    setSelectedSale(null)
-                    setEmailTo('')
-                    setEmailError('')
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={sendEmail} disabled={emailBusy}>
-                  {emailBusy ? 'Sending…' : 'Send'}
-                </Button>
-              </div>
+              <form onSubmit={sendEmail} noValidate className="space-y-4">
+                <FormField id="sale-email-to" label="To" error={emailFieldErrors['sale-email-to']} required>
+                  <Input
+                    id="sale-email-to"
+                    type="email"
+                    value={emailTo}
+                    onChange={(e) => {
+                      clearEmailFieldError('sale-email-to')
+                      setEmailTo(e.target.value)
+                    }}
+                    placeholder="email@example.com"
+                    invalid={Boolean(emailFieldErrors['sale-email-to'])}
+                  />
+                </FormField>
+                <div className="flex gap-2 justify-end">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setShowEmailDialog(false)
+                      setSelectedSale(null)
+                      setEmailTo('')
+                      setEmailError('')
+                      clearEmailFieldErrors()
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={emailBusy}>
+                    {emailBusy ? 'Sending…' : 'Send'}
+                  </Button>
+                </div>
+              </form>
             </CardContent>
           </Card>
         </div>
@@ -858,6 +1090,90 @@ const Sales = () => {
                   </Button>
                 )}
               </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {paymentSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle>Collect payment · {paymentSale.invoiceNumber}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {paymentError && (
+                <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{paymentError}</div>
+              )}
+              <p className="mb-3 text-sm text-muted-foreground">
+                Outstanding ₹{Number(paymentSale.outstandingAmount || 0).toFixed(2)}. This does not create new sales revenue.
+              </p>
+              <form onSubmit={submitPayment} noValidate className="space-y-3">
+                <FormField id="pay-amount" label="Amount" error={paymentFieldErrors['pay-amount']} required>
+                  <Input
+                    id="pay-amount"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={paymentForm.amount}
+                    onChange={(e) => {
+                      clearPaymentFieldError('pay-amount')
+                      setPaymentForm({ ...paymentForm, amount: e.target.value === '' ? 0 : Number(e.target.value) })
+                    }}
+                    invalid={Boolean(paymentFieldErrors['pay-amount'])}
+                  />
+                </FormField>
+                <FormField id="pay-method" label="Method" error={paymentFieldErrors['pay-method']} required>
+                  <SearchableSelect
+                    id="pay-method"
+                    value={paymentForm.method}
+                    onChange={(method) => {
+                      clearPaymentFieldError('pay-method')
+                      setPaymentForm({ ...paymentForm, method })
+                    }}
+                    options={[
+                      { value: 'cash', label: 'Cash' },
+                      { value: 'upi', label: 'UPI' },
+                      { value: 'card', label: 'Card' },
+                      { value: 'bank', label: 'Bank Transfer' },
+                      { value: 'credit', label: 'Credit' },
+                      { value: 'other', label: 'Other' }
+                    ]}
+                    invalid={Boolean(paymentFieldErrors['pay-method'])}
+                  />
+                </FormField>
+                <FormField id="pay-reference" label="Reference" error={paymentFieldErrors['pay-reference']}>
+                  <Input
+                    id="pay-reference"
+                    value={paymentForm.reference}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })}
+                    placeholder="UPI ref / cheque no."
+                  />
+                </FormField>
+                <FormField id="pay-notes" label="Notes" error={paymentFieldErrors['pay-notes']}>
+                  <Input
+                    id="pay-notes"
+                    value={paymentForm.notes}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                  />
+                </FormField>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setPaymentSale(null)
+                      clearPaymentFieldErrors()
+                    }}
+                    disabled={paymentBusy}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={paymentBusy}>
+                    {paymentBusy ? 'Saving…' : 'Record payment'}
+                  </Button>
+                </div>
+              </form>
             </CardContent>
           </Card>
         </div>

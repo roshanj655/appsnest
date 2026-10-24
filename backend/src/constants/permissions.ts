@@ -23,6 +23,9 @@ export const ALL_PERMISSIONS = [
   'sales.create',
   'sales.update',
   'sales.delete',
+  'sales.payments.create',
+  'sales.payments.reverse',
+  'sales.price.override',
   'sales.invoice.download',
   'sales.email.send',
   'sales.attachments.upload',
@@ -43,6 +46,11 @@ export const ALL_PERMISSIONS = [
   'expenses.create',
   'expenses.update',
   'expenses.delete',
+  'loans.read',
+  'loans.create',
+  'loans.update',
+  'loans.delete',
+  'loans.repay',
   'businessUnits.read',
   'businessUnits.create',
   'businessUnits.update',
@@ -55,6 +63,7 @@ export const ALL_PERMISSIONS = [
   'reports.inventory.read',
   'reports.lowStock.read',
   'reports.profit.read',
+  'reports.margins.read',
   'auditLogs.read'
 ] as const;
 
@@ -76,6 +85,9 @@ const managerPermissions: Permission[] = [
   'sales.read',
   'sales.create',
   'sales.update',
+  'sales.payments.create',
+  'sales.payments.reverse',
+  'sales.price.override',
   'sales.invoice.download',
   'sales.email.send',
   'sales.attachments.upload',
@@ -93,6 +105,10 @@ const managerPermissions: Permission[] = [
   'expenses.read',
   'expenses.create',
   'expenses.update',
+  'loans.read',
+  'loans.create',
+  'loans.update',
+  'loans.repay',
   'businessUnits.read',
   'businessUnits.create',
   'businessUnits.update',
@@ -103,6 +119,7 @@ const managerPermissions: Permission[] = [
   'reports.inventory.read',
   'reports.lowStock.read',
   'reports.profit.read',
+  'reports.margins.read',
   'auditLogs.read'
 ];
 
@@ -115,6 +132,7 @@ const staffPermissions: Permission[] = [
   'suppliers.create',
   'sales.read',
   'sales.create',
+  'sales.payments.create',
   'sales.invoice.download',
   'sales.attachments.upload',
   'sales.attachments.download',
@@ -127,6 +145,9 @@ const staffPermissions: Permission[] = [
   'stockAdjustments.create',
   'expenses.read',
   'expenses.create',
+  'loans.read',
+  'loans.create',
+  'loans.repay',
   'businessUnits.read',
   'reports.dashboard.read'
 ];

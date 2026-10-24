@@ -6,7 +6,14 @@ import { getCustomerModel } from '../models/tenant/Customer';
 import { getSettingsModel } from '../models/tenant/Settings';
 import { generateInvoicePDF, generateThermalReceipt, generateInvoicePDFBuffer, invoicePdfFilename } from '../services/invoiceService';
 import { applySaleLines, reverseSaleLines, withOptionalTransaction } from '../services/inventoryCosting';
+import {
+  applyFinanceSnapshot,
+  recordSalePayment,
+  reverseSalePayment,
+  syncCustomerBalances
+} from '../services/salePayments';
 import { money2, mulMoney } from '../utils/money';
+import { buildInitialPayment, normalizePaymentMethod } from '../utils/saleFinance';
 import { logAuditEvent } from '../utils/auditLogger';
 import { sendEmail, mailerConfigFromSettings, describeMailError } from '../services/emailService';
 import path from 'path';
@@ -162,49 +169,88 @@ export const createSale = async (req: TenantRequest, res: Response) => {
         if (Number(variant.stock) < Number(item.quantity)) {
           return res.status(400).json({ message: `${product.name} (${variant.name}) has only ${variant.stock} in stock.` });
         }
+        const maxSellingPrice = Number(variant.maxSellingPrice || product.maxSellingPrice || variant.sellingPrice || product.sellingPrice || 0);
+        const minSellingPrice = Number(variant.minSellingPrice || product.minSellingPrice || 0);
+        const defaultPrice = Number(item.sellingPrice ?? variant.sellingPrice ?? product.sellingPrice);
+        const actual = Number(item.actualSoldAmount ?? item.price ?? defaultPrice);
+        if (maxSellingPrice > 0 && actual > maxSellingPrice && !item.priceOverrideReason) {
+          return res.status(400).json({
+            message: `${product.name} (${variant.name}): actual price ₹${actual} exceeds max ₹${maxSellingPrice}. Provide an override reason.`
+          });
+        }
         enrichedItems.push({
           ...item,
           variantId: variant._id,
           variantName: variant.name,
           productName: `${product.name} (${variant.name})`,
           barcode: variant.barcode || variant.sku || product.barcode || product.sku,
-          sellingPrice: Number(item.sellingPrice ?? variant.sellingPrice ?? product.sellingPrice)
+          categoryId: product.categoryId,
+          brand: product.brand,
+          sellingPrice: defaultPrice,
+          maxSellingPrice,
+          minSellingPrice,
+          actualSoldAmount: actual,
+          price: actual
         });
       } else {
         if (product.stock < Number(item.quantity)) {
           return res.status(400).json({ message: `${product.name} has only ${product.stock} in stock.` });
         }
+        const maxSellingPrice = Number(product.maxSellingPrice || product.sellingPrice || 0);
+        const minSellingPrice = Number(product.minSellingPrice || 0);
+        const defaultPrice = Number(item.sellingPrice ?? product.sellingPrice);
+        const actual = Number(item.actualSoldAmount ?? item.price ?? defaultPrice);
+        if (maxSellingPrice > 0 && actual > maxSellingPrice && !item.priceOverrideReason) {
+          return res.status(400).json({
+            message: `${product.name}: actual price ₹${actual} exceeds max ₹${maxSellingPrice}. Provide an override reason.`
+          });
+        }
         enrichedItems.push({
           ...item,
           productName: product.name,
-          barcode: product.barcode || product.sku
+          barcode: product.barcode || product.sku,
+          categoryId: product.categoryId,
+          brand: product.brand,
+          sellingPrice: defaultPrice,
+          maxSellingPrice,
+          minSellingPrice,
+          actualSoldAmount: actual,
+          price: actual
         });
       }
     }
     items = enrichedItems;
 
     const source = req.body.source === 'pos' ? 'pos' : 'manual';
-    let total = Number(req.body.total || 0);
-    let paidAmount = Number(req.body.paidAmount ?? total);
-    let changeAmount = Math.max(0, Number(req.body.changeAmount ?? paidAmount - total));
-
-    if (source === 'pos' && paidAmount >= 0 && total > paidAmount) {
-      const factor = paidAmount / total;
-      items = items.map((item: any) => {
-        const actualSoldAmount = Number(((item.actualSoldAmount ?? item.price) * factor).toFixed(4));
-        const lineBase = actualSoldAmount * Number(item.quantity || 0);
-        const gst = Number(item.gst || 0);
-        return {
-          ...item,
-          actualSoldAmount,
-          price: actualSoldAmount,
-          total: lineBase + (lineBase * gst) / 100
-        };
-      });
-      req.body.discount = Number((total - paidAmount).toFixed(2));
-      total = paidAmount;
-      changeAmount = 0;
-    }
+    const computedSubtotal = money2(
+      items.reduce((sum: number, item: any) => sum + Number(item.actualSoldAmount || 0) * Number(item.quantity || 0), 0)
+    );
+    const lineDiscount = money2(items.reduce((sum: number, item: any) => sum + Number(item.discount || 0), 0));
+    const invoiceDiscount = money2(Math.max(lineDiscount, Number(req.body.discount || 0)));
+    const netBeforeTax = money2(Math.max(0, computedSubtotal - invoiceDiscount));
+    const computedGst = money2(
+      items.reduce((sum: number, item: any) => {
+        const lineNet = Math.max(0, Number(item.actualSoldAmount || 0) * Number(item.quantity || 0) - Number(item.discount || 0));
+        return sum + (lineNet * Number(item.gst || 0)) / 100;
+      }, 0)
+    );
+    const total = money2(Number(req.body.total ?? netBeforeTax + computedGst));
+    const paidAmount = money2(Math.max(0, Number(req.body.paidAmount ?? 0)));
+    const paymentMethod = normalizePaymentMethod(req.body.paymentMode);
+    const createdBy = req.user ? String((req.user as any)._id || (req.user as any).id || '') : undefined;
+    const payments =
+      paidAmount > 0
+        ? [
+            buildInitialPayment({
+              amount: paidAmount,
+              method: paymentMethod,
+              reference: req.body.paymentReference,
+              notes: req.body.paymentNotes,
+              createdBy,
+              idempotencyKey: req.body.paymentIdempotencyKey || `sale-create:${invoiceNumber}`
+            })
+          ]
+        : [];
 
     const saleData: Record<string, unknown> = {
       ...req.body,
@@ -212,21 +258,22 @@ export const createSale = async (req: TenantRequest, res: Response) => {
       items,
       attachments,
       source,
-      paidAmount,
-      changeAmount,
+      subtotal: computedSubtotal,
+      discount: invoiceDiscount,
+      gst: money2(Number(req.body.gst ?? computedGst)),
       total,
-      discount: Number(req.body.discount || 0),
+      paymentMode: paymentMethod,
+      payments,
+      paidAmount,
       paymentDetails: {
         ...(typeof req.body.paymentDetails === 'object' && req.body.paymentDetails ? req.body.paymentDetails : {}),
-        paidAmount,
-        changeAmount
+        paidAmount
       },
       businessUnitId: resolveBusinessUnitId(req, req.body)
     };
     if (!saleData.customerId) {
       delete saleData.customerId;
     }
-    const createdBy = req.user ? String((req.user as any)._id || (req.user as any).id || '') : undefined;
     const warehouseId = saleData.businessUnitId ? String(saleData.businessUnitId) : undefined;
     const saleId = new mongoose.Types.ObjectId();
 
@@ -235,7 +282,7 @@ export const createSale = async (req: TenantRequest, res: Response) => {
       items = items.map((item: any, index: number) => {
         const costPerUnit = Number(priced[index]?.costPerUnit || 0);
         const cogs = Number(priced[index]?.cogs || money2(mulMoney(Number(item.quantity || 0), costPerUnit)));
-        const revenue = money2(Number(item.actualSoldAmount ?? item.price) * Number(item.quantity || 0));
+        const revenue = money2(Math.max(0, Number(item.actualSoldAmount ?? item.price) * Number(item.quantity || 0) - Number(item.discount || 0)));
         return {
           ...item,
           costPerUnit,
@@ -244,11 +291,15 @@ export const createSale = async (req: TenantRequest, res: Response) => {
           grossProfit: money2(revenue - cogs)
         };
       });
+      const draft: any = { _id: saleId, ...saleData, items };
+      applyFinanceSnapshot(draft);
       const [doc] = session
-        ? await Sale.create([{ _id: saleId, ...saleData, items }], { session })
-        : [await Sale.create({ _id: saleId, ...saleData, items })];
+        ? await Sale.create([draft], { session })
+        : [await Sale.create(draft)];
       return doc;
     });
+
+    await syncCustomerBalances(req.tenantDB!, sale.customerId as any);
 
     if (req.user && req.business) {
       await logAuditEvent({
@@ -257,7 +308,15 @@ export const createSale = async (req: TenantRequest, res: Response) => {
         action: 'CREATE',
         entity: 'Sale',
         entityId: sale._id.toString(),
-        changes: saleData,
+        changes: {
+          invoiceNumber,
+          total,
+          paidAmount,
+          paymentStatus: sale.paymentStatus,
+          outstandingAmount: sale.outstandingAmount,
+          netSalesRevenue: sale.netSalesRevenue,
+          grossProfit: sale.grossProfit
+        },
         req
       });
     }
@@ -576,5 +635,74 @@ export const returnSale = async (req: TenantRequest, res: Response) => {
     res.json(sale);
   } catch (error: any) {
     return res.status(error?.status || 400).json({ message: error.message || 'Unable to return sale.' });
+  }
+};
+
+export const addSalePayment = async (req: TenantRequest, res: Response) => {
+  try {
+    const createdBy = req.user ? String((req.user as any)._id || '') : undefined;
+    const sale = await recordSalePayment(
+      req.tenantDB!,
+      String(req.params.id),
+      {
+        amount: Number(req.body.amount),
+        method: req.body.method || req.body.paymentMode,
+        reference: req.body.reference,
+        notes: req.body.notes,
+        paidAt: req.body.paidAt,
+        idempotencyKey: req.body.idempotencyKey
+      },
+      createdBy
+    );
+
+    if (req.user && req.business) {
+      await logAuditEvent({
+        user: req.user as any,
+        business: req.business,
+        action: 'UPDATE',
+        entity: 'SalePayment',
+        entityId: String(sale._id),
+        changes: {
+          amount: req.body.amount,
+          method: req.body.method || req.body.paymentMode,
+          paymentStatus: sale.paymentStatus,
+          outstandingAmount: sale.outstandingAmount
+        },
+        req
+      });
+    }
+
+    res.status(201).json(sale);
+  } catch (error: any) {
+    res.status(error?.status || 500).json({ message: error?.message || 'Unable to record payment.' });
+  }
+};
+
+export const reversePayment = async (req: TenantRequest, res: Response) => {
+  try {
+    const reversedBy = req.user ? String((req.user as any)._id || '') : undefined;
+    const sale = await reverseSalePayment(
+      req.tenantDB!,
+      String(req.params.id),
+      String(req.params.paymentId),
+      String(req.body.reason || 'Reversed'),
+      reversedBy
+    );
+
+    if (req.user && req.business) {
+      await logAuditEvent({
+        user: req.user as any,
+        business: req.business,
+        action: 'UPDATE',
+        entity: 'SalePayment',
+        entityId: String(sale._id),
+        changes: { paymentId: req.params.paymentId, reason: req.body.reason, reversed: true },
+        req
+      });
+    }
+
+    res.json(sale);
+  } catch (error: any) {
+    res.status(error?.status || 500).json({ message: error?.message || 'Unable to reverse payment.' });
   }
 };

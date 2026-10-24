@@ -4,7 +4,8 @@ import PageHeader from '../components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { FormField } from '@/components/FormField'
+import { emailMsg, isValidEmail, requiredMsg, useFieldErrors } from '@/lib/formValidation'
 import SearchableSelect from '@/components/SearchableSelect'
 
 const Settings = () => {
@@ -15,6 +16,18 @@ const Settings = () => {
   const [errorMessage, setErrorMessage] = useState('')
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '' })
   const [passwordMessage, setPasswordMessage] = useState('')
+  const {
+    fieldErrors,
+    clearFieldErrors,
+    clearFieldError,
+    showFieldErrors
+  } = useFieldErrors()
+  const {
+    fieldErrors: passwordErrors,
+    clearFieldErrors: clearPasswordErrors,
+    clearFieldError: clearPasswordError,
+    showFieldErrors: showPasswordErrors
+  } = useFieldErrors()
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -36,6 +49,7 @@ const Settings = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target
+    clearFieldError(name)
     setSettings((prev) => ({
       ...(prev || {}),
       [name]: type === 'number' ? (value === '' ? 0 : Number(value)) : type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
@@ -45,12 +59,18 @@ const Settings = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMessage('')
+    clearFieldErrors()
     setSaving(true)
     setSuccess(false)
 
-    if (!settings?.businessName?.trim() || !settings?.email?.trim() || !settings?.phone?.trim()) {
+    const errors: Record<string, string> = {}
+    if (!settings?.businessName?.trim()) errors.businessName = requiredMsg('Business name')
+    if (!settings?.email?.trim()) errors.email = requiredMsg('Email')
+    else if (!isValidEmail(settings.email)) errors.email = emailMsg
+    if (!settings?.phone?.trim()) errors.phone = requiredMsg('Phone')
+
+    if (showFieldErrors(errors)) {
       setSaving(false)
-      setErrorMessage('Business name, email, and phone are required.')
       return
     }
 
@@ -98,53 +118,64 @@ const Settings = () => {
 
       <Card>
         <CardContent className="pt-6">
-          <form onSubmit={handleSubmit} className="space-y-8">
+          <form noValidate onSubmit={handleSubmit} className="space-y-8">
             <div>
               <div className="mb-6">
                 <CardTitle>Business Information</CardTitle>
                 <CardDescription className="mt-1">These details appear across invoices, reports, and system identity.</CardDescription>
               </div>
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="businessName">Business Name</Label>
-                  <Input id="businessName" type="text" name="businessName" value={settings?.businessName || ''} onChange={handleChange} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" name="email" value={settings?.email || ''} onChange={handleChange} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input id="phone" type="text" name="phone" value={settings?.phone || ''} onChange={handleChange} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="gstin">GSTIN</Label>
-                  <Input id="gstin" type="text" name="gstin" value={settings?.gstin || ''} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pan">PAN</Label>
-                  <Input id="pan" type="text" name="pan" value={settings?.pan || ''} onChange={handleChange} />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="address">Address</Label>
-                  <Input id="address" type="text" name="address" value={settings?.address || ''} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="city">City</Label>
-                  <Input id="city" type="text" name="city" value={settings?.city || ''} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="state">State</Label>
-                  <Input id="state" type="text" name="state" value={settings?.state || ''} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pincode">Pincode</Label>
-                  <Input id="pincode" type="text" name="pincode" value={settings?.pincode || ''} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="country">Country</Label>
-                  <Input id="country" type="text" name="country" value={settings?.country || 'India'} onChange={handleChange} />
-                </div>
+                <FormField id="businessName" label="Business Name" error={fieldErrors.businessName} required>
+                  <Input
+                    id="businessName"
+                    type="text"
+                    name="businessName"
+                    value={settings?.businessName || ''}
+                    invalid={Boolean(fieldErrors.businessName)}
+                    onChange={handleChange}
+                  />
+                </FormField>
+                <FormField id="email" label="Email" error={fieldErrors.email} required>
+                  <Input
+                    id="email"
+                    type="email"
+                    name="email"
+                    value={settings?.email || ''}
+                    invalid={Boolean(fieldErrors.email)}
+                    onChange={handleChange}
+                  />
+                </FormField>
+                <FormField id="phone" label="Phone" error={fieldErrors.phone} required>
+                  <Input
+                    id="phone"
+                    type="text"
+                    name="phone"
+                    value={settings?.phone || ''}
+                    invalid={Boolean(fieldErrors.phone)}
+                    onChange={handleChange}
+                  />
+                </FormField>
+                <FormField id="gstin" label="GSTIN" error={fieldErrors.gstin}>
+                  <Input id="gstin" type="text" name="gstin" value={settings?.gstin || ''} invalid={Boolean(fieldErrors.gstin)} onChange={handleChange} />
+                </FormField>
+                <FormField id="pan" label="PAN" error={fieldErrors.pan}>
+                  <Input id="pan" type="text" name="pan" value={settings?.pan || ''} invalid={Boolean(fieldErrors.pan)} onChange={handleChange} />
+                </FormField>
+                <FormField id="address" label="Address" error={fieldErrors.address} className="md:col-span-2">
+                  <Input id="address" type="text" name="address" value={settings?.address || ''} invalid={Boolean(fieldErrors.address)} onChange={handleChange} />
+                </FormField>
+                <FormField id="city" label="City" error={fieldErrors.city}>
+                  <Input id="city" type="text" name="city" value={settings?.city || ''} invalid={Boolean(fieldErrors.city)} onChange={handleChange} />
+                </FormField>
+                <FormField id="state" label="State" error={fieldErrors.state}>
+                  <Input id="state" type="text" name="state" value={settings?.state || ''} invalid={Boolean(fieldErrors.state)} onChange={handleChange} />
+                </FormField>
+                <FormField id="pincode" label="Pincode" error={fieldErrors.pincode}>
+                  <Input id="pincode" type="text" name="pincode" value={settings?.pincode || ''} invalid={Boolean(fieldErrors.pincode)} onChange={handleChange} />
+                </FormField>
+                <FormField id="country" label="Country" error={fieldErrors.country}>
+                  <Input id="country" type="text" name="country" value={settings?.country || 'India'} invalid={Boolean(fieldErrors.country)} onChange={handleChange} />
+                </FormField>
               </div>
             </div>
 
@@ -154,39 +185,68 @@ const Settings = () => {
                 <CardDescription className="mt-1">Control numbering, receipt width, currency, and footer content.</CardDescription>
               </div>
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="invoicePrefix">Sales Invoice Prefix</Label>
-                  <Input id="invoicePrefix" type="text" name="invoicePrefix" value={settings?.invoicePrefix || 'INV'} onChange={handleChange} />
-                  <p className="text-xs text-muted-foreground">New sales use PREFIX/FY/000001, for example INV/25-26/000001. The PDF file is INV_25-26_000001.pdf.</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="invoiceDueDays">Invoice due days</Label>
-                  <Input id="invoiceDueDays" type="number" min={0} name="invoiceDueDays" value={settings?.invoiceDueDays ?? 15} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="purchaseInvoicePrefix">Purchase Invoice Prefix</Label>
-                  <Input id="purchaseInvoicePrefix" type="text" name="purchaseInvoicePrefix" value={settings?.purchaseInvoicePrefix || 'PUR'} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="thermalPrinterWidth">Thermal Printer Width (mm)</Label>
+                <FormField
+                  id="invoicePrefix"
+                  label="Sales Invoice Prefix"
+                  error={fieldErrors.invoicePrefix}
+                  hint="New sales use PREFIX/FY/000001, for example INV/25-26/000001. The PDF file is INV_25-26_000001.pdf."
+                >
+                  <Input
+                    id="invoicePrefix"
+                    type="text"
+                    name="invoicePrefix"
+                    value={settings?.invoicePrefix || 'INV'}
+                    invalid={Boolean(fieldErrors.invoicePrefix)}
+                    onChange={handleChange}
+                  />
+                </FormField>
+                <FormField id="invoiceDueDays" label="Invoice due days" error={fieldErrors.invoiceDueDays}>
+                  <Input
+                    id="invoiceDueDays"
+                    type="number"
+                    min={0}
+                    name="invoiceDueDays"
+                    value={settings?.invoiceDueDays ?? 15}
+                    invalid={Boolean(fieldErrors.invoiceDueDays)}
+                    onChange={handleChange}
+                  />
+                </FormField>
+                <FormField id="purchaseInvoicePrefix" label="Purchase Invoice Prefix" error={fieldErrors.purchaseInvoicePrefix}>
+                  <Input
+                    id="purchaseInvoicePrefix"
+                    type="text"
+                    name="purchaseInvoicePrefix"
+                    value={settings?.purchaseInvoicePrefix || 'PUR'}
+                    invalid={Boolean(fieldErrors.purchaseInvoicePrefix)}
+                    onChange={handleChange}
+                  />
+                </FormField>
+                <FormField id="thermalPrinterWidth" label="Thermal Printer Width (mm)" error={fieldErrors.thermalPrinterWidth}>
                   <SearchableSelect
                     id="thermalPrinterWidth"
                     name="thermalPrinterWidth"
                     value={String(settings?.thermalPrinterWidth || 58)}
-                    onChange={(value) => setSettings((prev) => ({ ...(prev || {}), thermalPrinterWidth: Number(value) }))}
+                    invalid={Boolean(fieldErrors.thermalPrinterWidth)}
+                    onChange={(value) => {
+                      clearFieldError('thermalPrinterWidth')
+                      setSettings((prev) => ({ ...(prev || {}), thermalPrinterWidth: Number(value) }))
+                    }}
                     options={[
                       { value: '58', label: '58 mm' },
                       { value: '80', label: '80 mm' }
                     ]}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="currency">Currency</Label>
+                </FormField>
+                <FormField id="currency" label="Currency" error={fieldErrors.currency}>
                   <SearchableSelect
                     id="currency"
                     name="currency"
                     value={settings?.currency || 'INR'}
-                    onChange={(value) => setSettings((prev) => ({ ...(prev || {}), currency: value }))}
+                    invalid={Boolean(fieldErrors.currency)}
+                    onChange={(value) => {
+                      clearFieldError('currency')
+                      setSettings((prev) => ({ ...(prev || {}), currency: value }))
+                    }}
                     options={[
                       { value: 'INR', label: 'INR (₹)' },
                       { value: 'USD', label: 'USD ($)' },
@@ -194,11 +254,18 @@ const Settings = () => {
                       { value: 'GBP', label: 'GBP (£)' }
                     ]}
                   />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="footerText">Footer Text</Label>
-                  <Input id="footerText" type="text" name="footerText" value={settings?.footerText || ''} onChange={handleChange} placeholder="Thank you for your business!" />
-                </div>
+                </FormField>
+                <FormField id="footerText" label="Footer Text" error={fieldErrors.footerText} className="md:col-span-2">
+                  <Input
+                    id="footerText"
+                    type="text"
+                    name="footerText"
+                    value={settings?.footerText || ''}
+                    invalid={Boolean(fieldErrors.footerText)}
+                    onChange={handleChange}
+                    placeholder="Thank you for your business!"
+                  />
+                </FormField>
                 <label htmlFor="taxEnabled" className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
                   <input
                     type="checkbox"
@@ -219,30 +286,24 @@ const Settings = () => {
                 <CardDescription className="mt-1">Printed on the sales tax invoice, same layout as billed invoices.</CardDescription>
               </div>
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="bankName">Bank name</Label>
-                  <Input id="bankName" name="bankName" value={settings?.bankName || ''} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bankBranch">Branch</Label>
-                  <Input id="bankBranch" name="bankBranch" value={settings?.bankBranch || ''} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bankAccountName">Account name</Label>
-                  <Input id="bankAccountName" name="bankAccountName" value={settings?.bankAccountName || ''} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bankAccountNumber">Account number</Label>
-                  <Input id="bankAccountNumber" name="bankAccountNumber" value={settings?.bankAccountNumber || ''} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bankIfsc">IFSC</Label>
-                  <Input id="bankIfsc" name="bankIfsc" value={settings?.bankIfsc || ''} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bankSwift">Swift code</Label>
-                  <Input id="bankSwift" name="bankSwift" value={settings?.bankSwift || ''} onChange={handleChange} />
-                </div>
+                <FormField id="bankName" label="Bank name" error={fieldErrors.bankName}>
+                  <Input id="bankName" name="bankName" value={settings?.bankName || ''} invalid={Boolean(fieldErrors.bankName)} onChange={handleChange} />
+                </FormField>
+                <FormField id="bankBranch" label="Branch" error={fieldErrors.bankBranch}>
+                  <Input id="bankBranch" name="bankBranch" value={settings?.bankBranch || ''} invalid={Boolean(fieldErrors.bankBranch)} onChange={handleChange} />
+                </FormField>
+                <FormField id="bankAccountName" label="Account name" error={fieldErrors.bankAccountName}>
+                  <Input id="bankAccountName" name="bankAccountName" value={settings?.bankAccountName || ''} invalid={Boolean(fieldErrors.bankAccountName)} onChange={handleChange} />
+                </FormField>
+                <FormField id="bankAccountNumber" label="Account number" error={fieldErrors.bankAccountNumber}>
+                  <Input id="bankAccountNumber" name="bankAccountNumber" value={settings?.bankAccountNumber || ''} invalid={Boolean(fieldErrors.bankAccountNumber)} onChange={handleChange} />
+                </FormField>
+                <FormField id="bankIfsc" label="IFSC" error={fieldErrors.bankIfsc}>
+                  <Input id="bankIfsc" name="bankIfsc" value={settings?.bankIfsc || ''} invalid={Boolean(fieldErrors.bankIfsc)} onChange={handleChange} />
+                </FormField>
+                <FormField id="bankSwift" label="Swift code" error={fieldErrors.bankSwift}>
+                  <Input id="bankSwift" name="bankSwift" value={settings?.bankSwift || ''} invalid={Boolean(fieldErrors.bankSwift)} onChange={handleChange} />
+                </FormField>
               </div>
             </div>
 
@@ -254,22 +315,47 @@ const Settings = () => {
                 </CardDescription>
               </div>
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="smtpHost">SMTP host</Label>
-                  <Input id="smtpHost" name="smtpHost" value={settings?.smtpHost || ''} onChange={handleChange} placeholder="smtp.gmail.com" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="smtpPort">SMTP port</Label>
-                  <Input id="smtpPort" type="number" name="smtpPort" value={settings?.smtpPort || 587} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="smtpUser">SMTP user (Gmail address)</Label>
-                  <Input id="smtpUser" name="smtpUser" value={settings?.smtpUser || ''} onChange={handleChange} placeholder="you@gmail.com" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="smtpPass">SMTP app password</Label>
-                  <Input id="smtpPass" type="password" name="smtpPass" value={settings?.smtpPass || ''} onChange={handleChange} placeholder="16-character app password" />
-                </div>
+                <FormField id="smtpHost" label="SMTP host" error={fieldErrors.smtpHost}>
+                  <Input
+                    id="smtpHost"
+                    name="smtpHost"
+                    value={settings?.smtpHost || ''}
+                    invalid={Boolean(fieldErrors.smtpHost)}
+                    onChange={handleChange}
+                    placeholder="smtp.gmail.com"
+                  />
+                </FormField>
+                <FormField id="smtpPort" label="SMTP port" error={fieldErrors.smtpPort}>
+                  <Input
+                    id="smtpPort"
+                    type="number"
+                    name="smtpPort"
+                    value={settings?.smtpPort || 587}
+                    invalid={Boolean(fieldErrors.smtpPort)}
+                    onChange={handleChange}
+                  />
+                </FormField>
+                <FormField id="smtpUser" label="SMTP user (Gmail address)" error={fieldErrors.smtpUser}>
+                  <Input
+                    id="smtpUser"
+                    name="smtpUser"
+                    value={settings?.smtpUser || ''}
+                    invalid={Boolean(fieldErrors.smtpUser)}
+                    onChange={handleChange}
+                    placeholder="you@gmail.com"
+                  />
+                </FormField>
+                <FormField id="smtpPass" label="SMTP app password" error={fieldErrors.smtpPass}>
+                  <Input
+                    id="smtpPass"
+                    type="password"
+                    name="smtpPass"
+                    value={settings?.smtpPass || ''}
+                    invalid={Boolean(fieldErrors.smtpPass)}
+                    onChange={handleChange}
+                    placeholder="16-character app password"
+                  />
+                </FormField>
                 <label htmlFor="smtpSecure" className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 md:col-span-2">
                   <input
                     type="checkbox"
@@ -299,10 +385,21 @@ const Settings = () => {
           <CardDescription className="mt-1 mb-4">Update the password for the signed-in user.</CardDescription>
           {passwordMessage && <p className="mb-3 text-sm">{passwordMessage}</p>}
           <form
+            noValidate
             className="grid max-w-md gap-4"
             onSubmit={async (e) => {
               e.preventDefault()
               setPasswordMessage('')
+              clearPasswordErrors()
+
+              const errors: Record<string, string> = {}
+              if (!passwordForm.currentPassword.trim()) errors.currentPassword = requiredMsg('Current password')
+              if (!passwordForm.newPassword.trim()) errors.newPassword = requiredMsg('New password')
+              else if (passwordForm.newPassword.length < 6) {
+                errors.newPassword = 'Password must be at least 6 characters long.'
+              }
+              if (showPasswordErrors(errors)) return
+
               try {
                 const token = localStorage.getItem('token')
                 await axios.post('/api/auth/change-password', passwordForm, {
@@ -315,27 +412,30 @@ const Settings = () => {
               }
             }}
           >
-            <div className="space-y-2">
-              <Label htmlFor="currentPassword">Current Password</Label>
+            <FormField id="currentPassword" label="Current Password" error={passwordErrors.currentPassword} required>
               <Input
                 id="currentPassword"
                 type="password"
                 value={passwordForm.currentPassword}
-                onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                required
+                invalid={Boolean(passwordErrors.currentPassword)}
+                onChange={(e) => {
+                  setPasswordForm({ ...passwordForm, currentPassword: e.target.value })
+                  clearPasswordError('currentPassword')
+                }}
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="newPassword">New Password</Label>
+            </FormField>
+            <FormField id="newPassword" label="New Password" error={passwordErrors.newPassword} required>
               <Input
                 id="newPassword"
                 type="password"
-                minLength={6}
                 value={passwordForm.newPassword}
-                onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                required
+                invalid={Boolean(passwordErrors.newPassword)}
+                onChange={(e) => {
+                  setPasswordForm({ ...passwordForm, newPassword: e.target.value })
+                  clearPasswordError('newPassword')
+                }}
               />
-            </div>
+            </FormField>
             <Button type="submit">Update Password</Button>
           </form>
         </CardContent>

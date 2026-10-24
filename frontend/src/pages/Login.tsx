@@ -3,8 +3,10 @@ import axios from 'axios'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { FormField } from '@/components/FormField'
+import { emailMsg, isValidEmail, requiredMsg, useFieldErrors } from '@/lib/formValidation'
+import { getAccessToken, isAccessTokenExpired, clearAuthSession } from '@/lib/auth'
 
 const Login = () => {
   const [email, setEmail] = useState('')
@@ -12,31 +14,37 @@ const Login = () => {
   const location = useLocation()
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
+  const { fieldErrors, clearFieldErrors, clearFieldError, showFieldErrors } = useFieldErrors()
   const navigate = useNavigate()
 
-  // Update success message when location state changes
   useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.get('expired') === '1') {
+      clearAuthSession()
+      setErrorMessage('Your session expired. Please log in again.')
+      navigate('/', { replace: true })
+      return
+    }
     const msg = (location.state as { successMessage?: string } | null)?.successMessage
     if (msg) {
       setSuccessMessage(msg)
-      // Clear the state so it doesn't show again on refresh
       navigate(location.pathname, { replace: true, state: {} })
+    }
+    if (getAccessToken() && !isAccessTokenExpired()) {
+      navigate('/dashboard', { replace: true })
     }
   }, [location, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMessage('')
+    clearFieldErrors()
 
-    if (!email.trim() || !password.trim()) {
-      setErrorMessage('Email and password are required.')
-      return
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setErrorMessage('Enter a valid email address.')
-      return
-    }
+    const errors: Record<string, string> = {}
+    if (!email.trim()) errors.email = requiredMsg('Email')
+    else if (!isValidEmail(email)) errors.email = emailMsg
+    if (!password.trim()) errors.password = requiredMsg('Password')
+    if (showFieldErrors(errors)) return
 
     try {
       const res = await axios.post('/api/auth/login', { email, password })
@@ -68,29 +76,33 @@ const Login = () => {
               {errorMessage}
             </div>
           )}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+          <form noValidate onSubmit={handleSubmit} className="space-y-4">
+            <FormField id="email" label="Email" error={fieldErrors.email} required>
               <Input
                 id="email"
                 type="email"
                 placeholder="email@example.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
+                invalid={Boolean(fieldErrors.email)}
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                  clearFieldError('email')
+                }}
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+            </FormField>
+            <FormField id="password" label="Password" error={fieldErrors.password} required>
               <Input
                 id="password"
                 type="password"
                 placeholder="Enter your password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
+                invalid={Boolean(fieldErrors.password)}
+                onChange={(e) => {
+                  setPassword(e.target.value)
+                  clearFieldError('password')
+                }}
               />
-            </div>
+            </FormField>
             <Button type="submit" className="w-full">Login</Button>
           </form>
         </CardContent>

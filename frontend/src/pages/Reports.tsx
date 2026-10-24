@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import axios from 'axios'
 import PageHeader from '../components/PageHeader'
+import ReportChart from '@/components/ReportChart'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
@@ -67,6 +68,11 @@ const Reports = () => {
       title: 'Profit Report',
       path: '/reports/profit',
       description: 'Revenue, expenses, and profit margins'
+    },
+    {
+      title: 'Margin & collections',
+      path: '/reports/margins',
+      description: 'Product/category/monthly margins, receivables, and actual vs max price'
     }
   ]
 
@@ -106,6 +112,53 @@ const Reports = () => {
         </div>
       )}
 
+      {stats && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <ReportChart
+            title="This month vs last month"
+            description="Sales, purchases, and profit snapshot."
+            type="bar"
+            xKey="name"
+            data={[
+              {
+                name: 'Sales',
+                thisMonth: Number(stats.monthlySales || 0),
+                lastMonth: Number(stats.lastMonthSales || 0)
+              },
+              {
+                name: 'Purchases',
+                thisMonth: Number(stats.monthlyPurchases || 0),
+                lastMonth: Number(stats.lastMonthPurchases || 0)
+              },
+              {
+                name: 'Profit',
+                thisMonth: Number(stats.monthlyProfit || 0),
+                lastMonth: Number(stats.lastMonthProfit || 0)
+              }
+            ]}
+            series={[
+              { key: 'thisMonth', name: 'This month', color: '#22d3ee' },
+              { key: 'lastMonth', name: 'Last month', color: '#64748b' }
+            ]}
+          />
+          <ReportChart
+            title="Today vs month"
+            description="Quick compare of today against the current month."
+            type="bar"
+            xKey="name"
+            data={[
+              { name: 'Sales', today: Number(stats.todaySales || 0), month: Number(stats.monthlySales || 0) },
+              { name: 'Purchases', today: Number(stats.todayPurchases || 0), month: Number(stats.monthlyPurchases || 0) },
+              { name: 'Profit', today: Number(stats.todayProfit || 0), month: Number(stats.monthlyProfit || 0) }
+            ]}
+            series={[
+              { key: 'today', name: 'Today', color: '#10b981' },
+              { key: 'month', name: 'This month', color: '#38bdf8' }
+            ]}
+          />
+        </div>
+      )}
+
       {unitReport?.units && (
         <Card>
           <CardHeader>
@@ -132,6 +185,30 @@ const Reports = () => {
                 <p className="text-xs text-muted-foreground">Combined profit</p>
                 <p className="text-lg font-semibold">₹{Number(unitReport.combined?.profit || 0).toFixed(2)}</p>
               </div>
+            </div>
+            <div className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <ReportChart
+                title="Sales by unit"
+                type="bar"
+                layout="vertical"
+                xKey="name"
+                data={(unitReport.units || []).map((row: any) => ({
+                  name: String(row.name || row.code || 'Unit').slice(0, 18),
+                  value: Number(row.sales || 0)
+                }))}
+                series={[{ key: 'value', name: 'Sales', color: '#10b981' }]}
+              />
+              <ReportChart
+                title="Profit by unit"
+                type="bar"
+                layout="vertical"
+                xKey="name"
+                data={(unitReport.units || []).map((row: any) => ({
+                  name: String(row.name || row.code || 'Unit').slice(0, 18),
+                  value: Number(row.profit || 0)
+                }))}
+                series={[{ key: 'value', name: 'Profit', color: '#f59e0b' }]}
+              />
             </div>
             <Table>
               <TableHeader>

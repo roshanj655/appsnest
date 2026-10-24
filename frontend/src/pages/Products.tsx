@@ -3,12 +3,14 @@ import axios from 'axios'
 import PageHeader from '../components/PageHeader'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import RecordActions from '@/components/RecordActions'
+import { FormField } from '@/components/FormField'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { authHeaders, listItems, listParams } from '@/lib/api'
+import { requiredMsg, useFieldErrors } from '@/lib/formValidation'
 import { BusinessUnitSelect, defaultUnitFormValue } from '@/components/BusinessUnitSelect'
 import ExcelImport from '@/components/ExcelImport'
 import { useNavigate } from 'react-router-dom'
@@ -22,6 +24,8 @@ type Product = {
   unit?: string
   purchasePrice: number
   sellingPrice: number
+  maxSellingPrice?: number
+  minSellingPrice?: number
   onlinePrice?: number
   onlineVisible?: boolean
   mrp?: number
@@ -58,6 +62,8 @@ type ProductFormData = {
   unit: string
   purchasePrice: number
   sellingPrice: number
+  maxSellingPrice: number
+  minSellingPrice: number
   onlinePrice: number
   onlineVisible: boolean
   mrp: number
@@ -77,6 +83,8 @@ type ProductFormData = {
     attributes: string
     purchasePrice: number
     sellingPrice: number
+    maxSellingPrice: number
+    minSellingPrice: number
     stock: number
   }>
   businessUnitId: string
@@ -90,6 +98,8 @@ const emptyForm: ProductFormData = {
   unit: 'pcs',
   purchasePrice: 0,
   sellingPrice: 0,
+  maxSellingPrice: 0,
+  minSellingPrice: 0,
   onlinePrice: 0,
   onlineVisible: false,
   mrp: 0,
@@ -112,8 +122,12 @@ const emptyVariant = {
   attributes: '',
   purchasePrice: 0,
   sellingPrice: 0,
+  maxSellingPrice: 0,
+  minSellingPrice: 0,
   stock: 0
 }
+
+const notNegativeMsg = 'Cannot be negative.'
 
 type ConfirmKind = 'disable' | 'enable' | 'delete'
 
@@ -128,6 +142,7 @@ const Products = () => {
   const [confirmKind, setConfirmKind] = useState<ConfirmKind | null>(null)
   const [confirmRow, setConfirmRow] = useState<Product | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
+  const { fieldErrors, clearFieldErrors, clearFieldError, showFieldErrors } = useFieldErrors()
 
   useEffect(() => {
     fetchProducts()
@@ -146,12 +161,14 @@ const Products = () => {
     setShowForm(false)
     setEditingId(null)
     setFormData({ ...emptyForm, businessUnitId: defaultUnitFormValue() })
+    clearFieldErrors()
   }
 
   const openCreate = () => {
     setEditingId(null)
     setFormData({ ...emptyForm, businessUnitId: defaultUnitFormValue() })
     setErrorMessage('')
+    clearFieldErrors()
     setShowForm(true)
   }
 
@@ -165,6 +182,8 @@ const Products = () => {
       unit: product.unit || 'pcs',
       purchasePrice: product.purchasePrice,
       sellingPrice: product.sellingPrice,
+      maxSellingPrice: product.maxSellingPrice || product.sellingPrice || 0,
+      minSellingPrice: product.minSellingPrice || 0,
       onlinePrice: product.onlinePrice || 0,
       onlineVisible: Boolean(product.onlineVisible),
       mrp: product.mrp || 0,
@@ -185,36 +204,58 @@ const Products = () => {
         attributes: variant.attributes || '',
         purchasePrice: variant.purchasePrice ?? product.purchasePrice,
         sellingPrice: variant.sellingPrice,
+        maxSellingPrice: (variant as any).maxSellingPrice || variant.sellingPrice || 0,
+        minSellingPrice: (variant as any).minSellingPrice || 0,
         stock: variant.stock
       }))
     })
     setErrorMessage('')
+    clearFieldErrors()
     setShowForm(true)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMessage('')
-    if (!formData.name.trim() || !formData.sku.trim()) {
-      setErrorMessage('Product name and SKU are required.')
-      return
-    }
-    if (formData.purchasePrice < 0 || formData.sellingPrice < 0 || formData.stock < 0) {
-      setErrorMessage('Prices and stock cannot be negative.')
-      return
-    }
+    clearFieldErrors()
+    const errors: Record<string, string> = {}
+
+    if (!formData.name.trim()) errors['product-name'] = requiredMsg('Product name')
+    if (!formData.sku.trim()) errors['product-sku'] = requiredMsg('SKU')
+
+    if (formData.sellingPrice < 0) errors['selling-price'] = notNegativeMsg
+    if (formData.maxSellingPrice < 0) errors['max-selling-price'] = notNegativeMsg
+    if (formData.minSellingPrice < 0) errors['min-selling-price'] = notNegativeMsg
+    if (formData.mrp < 0) errors['product-mrp'] = notNegativeMsg
+    if (formData.onlinePrice < 0) errors['online-price'] = notNegativeMsg
+    if (formData.gst < 0) errors['product-gst'] = notNegativeMsg
+    if (formData.minStock < 0) errors['product-min'] = notNegativeMsg
+    if (formData.maxStock < 0) errors['product-max'] = notNegativeMsg
+    if (formData.purchasePrice < 0) errors['purchase-price'] = notNegativeMsg
+    if (formData.stock < 0) errors['product-stock'] = notNegativeMsg
+
+    formData.variants.forEach((variant, index) => {
+      if (variant.purchasePrice < 0) errors[`variant-${index}-purchasePrice`] = notNegativeMsg
+      if (variant.sellingPrice < 0) errors[`variant-${index}-sellingPrice`] = notNegativeMsg
+      if (variant.stock < 0) errors[`variant-${index}-stock`] = notNegativeMsg
+    })
+
     const namedVariants = formData.variants.filter((variant) => variant.name.trim())
     if (!editingId) {
       if (!namedVariants.length && Number(formData.stock) > 0 && Number(formData.purchasePrice) <= 0) {
-        setErrorMessage('Enter opening stock quantity and the cost per unit for that stock.')
-        return
+        errors['purchase-price'] = 'Enter opening stock quantity and the cost per unit for that stock.'
       }
-      const missingCost = namedVariants.find((variant) => Number(variant.stock) > 0 && Number(variant.purchasePrice) <= 0)
-      if (missingCost) {
-        setErrorMessage(`Enter opening cost for variant "${missingCost.name}" along with its opening stock.`)
-        return
-      }
+      formData.variants.forEach((variant, index) => {
+        if (!variant.name.trim()) return
+        if (Number(variant.stock) > 0 && Number(variant.purchasePrice) <= 0) {
+          errors[`variant-${index}-purchasePrice`] =
+            `Enter opening cost for variant "${variant.name}" along with its opening stock.`
+        }
+      })
     }
+
+    if (showFieldErrors(errors)) return
+
     try {
       setSaving(true)
       const payload = {
@@ -300,72 +341,225 @@ const Products = () => {
                 />
               </div>
             )}
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} noValidate className="space-y-5">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="product-name">Product Name</Label>
-                  <Input id="product-name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-sku">SKU</Label>
-                  <Input id="product-sku" value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value.toUpperCase() })} required />
-                </div>
+                <FormField id="product-name" label="Product Name" error={fieldErrors['product-name']} required>
+                  <Input
+                    id="product-name"
+                    value={formData.name}
+                    onChange={(e) => {
+                      clearFieldError('product-name')
+                      setFormData({ ...formData, name: e.target.value })
+                    }}
+                    invalid={Boolean(fieldErrors['product-name'])}
+                  />
+                </FormField>
+                <FormField id="product-sku" label="SKU" error={fieldErrors['product-sku']} required>
+                  <Input
+                    id="product-sku"
+                    value={formData.sku}
+                    onChange={(e) => {
+                      clearFieldError('product-sku')
+                      setFormData({ ...formData, sku: e.target.value.toUpperCase() })
+                    }}
+                    invalid={Boolean(fieldErrors['product-sku'])}
+                  />
+                </FormField>
                 <BusinessUnitSelect
                   value={formData.businessUnitId}
-                  onChange={(businessUnitId) => setFormData({ ...formData, businessUnitId })}
+                  onChange={(businessUnitId) => {
+                    clearFieldError('business-unit')
+                    setFormData({ ...formData, businessUnitId })
+                  }}
+                  error={fieldErrors['business-unit']}
                 />
-                <div className="space-y-2">
-                  <Label htmlFor="product-barcode">Barcode</Label>
-                  <Input id="product-barcode" value={formData.barcode} onChange={(e) => setFormData({ ...formData, barcode: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-brand">Brand</Label>
-                  <Input id="product-brand" value={formData.brand} onChange={(e) => setFormData({ ...formData, brand: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-unit">Unit</Label>
-                  <Input id="product-unit" value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-location">Rack / Location</Label>
-                  <Input id="product-location" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="selling-price">Selling Price</Label>
-                  <Input id="selling-price" type="number" min={0} step="0.01" value={formData.sellingPrice} onChange={(e) => setFormData({ ...formData, sellingPrice: e.target.value === '' ? 0 : Number(e.target.value) })} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-mrp">MRP</Label>
-                  <Input id="product-mrp" type="number" min={0} step="0.01" value={formData.mrp} onChange={(e) => setFormData({ ...formData, mrp: e.target.value === '' ? 0 : Number(e.target.value) })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="online-price">Online Price</Label>
-                  <Input id="online-price" type="number" min={0} step="0.01" value={formData.onlinePrice} onChange={(e) => setFormData({ ...formData, onlinePrice: e.target.value === '' ? 0 : Number(e.target.value) })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-gst">GST %</Label>
-                  <Input id="product-gst" type="number" min={0} step="0.01" value={formData.gst} onChange={(e) => setFormData({ ...formData, gst: e.target.value === '' ? 0 : Number(e.target.value) })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-min">Min Stock</Label>
-                  <Input id="product-min" type="number" min={0} value={formData.minStock} onChange={(e) => setFormData({ ...formData, minStock: e.target.value === '' ? 0 : Number(e.target.value) })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-max">Max Stock</Label>
-                  <Input id="product-max" type="number" min={0} value={formData.maxStock} onChange={(e) => setFormData({ ...formData, maxStock: e.target.value === '' ? 0 : Number(e.target.value) })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-hsn">HSN</Label>
-                  <Input id="product-hsn" value={formData.hsn} onChange={(e) => setFormData({ ...formData, hsn: e.target.value })} />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="product-desc">Description</Label>
-                  <Input id="product-desc" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-notes">Notes</Label>
-                  <Input id="product-notes" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
-                </div>
+                <FormField id="product-barcode" label="Barcode" error={fieldErrors['product-barcode']}>
+                  <Input
+                    id="product-barcode"
+                    value={formData.barcode}
+                    onChange={(e) => {
+                      clearFieldError('product-barcode')
+                      setFormData({ ...formData, barcode: e.target.value })
+                    }}
+                    invalid={Boolean(fieldErrors['product-barcode'])}
+                  />
+                </FormField>
+                <FormField id="product-brand" label="Brand" error={fieldErrors['product-brand']}>
+                  <Input
+                    id="product-brand"
+                    value={formData.brand}
+                    onChange={(e) => {
+                      clearFieldError('product-brand')
+                      setFormData({ ...formData, brand: e.target.value })
+                    }}
+                    invalid={Boolean(fieldErrors['product-brand'])}
+                  />
+                </FormField>
+                <FormField id="product-unit" label="Unit" error={fieldErrors['product-unit']}>
+                  <Input
+                    id="product-unit"
+                    value={formData.unit}
+                    onChange={(e) => {
+                      clearFieldError('product-unit')
+                      setFormData({ ...formData, unit: e.target.value })
+                    }}
+                    invalid={Boolean(fieldErrors['product-unit'])}
+                  />
+                </FormField>
+                <FormField id="product-location" label="Rack / Location" error={fieldErrors['product-location']}>
+                  <Input
+                    id="product-location"
+                    value={formData.location}
+                    onChange={(e) => {
+                      clearFieldError('product-location')
+                      setFormData({ ...formData, location: e.target.value })
+                    }}
+                    invalid={Boolean(fieldErrors['product-location'])}
+                  />
+                </FormField>
+                <FormField id="selling-price" label="Default Selling Price" error={fieldErrors['selling-price']} required>
+                  <Input
+                    id="selling-price"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={formData.sellingPrice}
+                    onChange={(e) => {
+                      clearFieldError('selling-price')
+                      setFormData({ ...formData, sellingPrice: e.target.value === '' ? 0 : Number(e.target.value) })
+                    }}
+                    invalid={Boolean(fieldErrors['selling-price'])}
+                  />
+                </FormField>
+                <FormField id="max-selling-price" label="Maximum Selling Price" error={fieldErrors['max-selling-price']}>
+                  <Input
+                    id="max-selling-price"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={formData.maxSellingPrice}
+                    onChange={(e) => {
+                      clearFieldError('max-selling-price')
+                      setFormData({ ...formData, maxSellingPrice: e.target.value === '' ? 0 : Number(e.target.value) })
+                    }}
+                    invalid={Boolean(fieldErrors['max-selling-price'])}
+                  />
+                </FormField>
+                <FormField id="min-selling-price" label="Minimum Selling Price" error={fieldErrors['min-selling-price']}>
+                  <Input
+                    id="min-selling-price"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={formData.minSellingPrice}
+                    onChange={(e) => {
+                      clearFieldError('min-selling-price')
+                      setFormData({ ...formData, minSellingPrice: e.target.value === '' ? 0 : Number(e.target.value) })
+                    }}
+                    invalid={Boolean(fieldErrors['min-selling-price'])}
+                  />
+                </FormField>
+                <FormField id="product-mrp" label="MRP" error={fieldErrors['product-mrp']}>
+                  <Input
+                    id="product-mrp"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={formData.mrp}
+                    onChange={(e) => {
+                      clearFieldError('product-mrp')
+                      setFormData({ ...formData, mrp: e.target.value === '' ? 0 : Number(e.target.value) })
+                    }}
+                    invalid={Boolean(fieldErrors['product-mrp'])}
+                  />
+                </FormField>
+                <FormField id="online-price" label="Online Price" error={fieldErrors['online-price']}>
+                  <Input
+                    id="online-price"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={formData.onlinePrice}
+                    onChange={(e) => {
+                      clearFieldError('online-price')
+                      setFormData({ ...formData, onlinePrice: e.target.value === '' ? 0 : Number(e.target.value) })
+                    }}
+                    invalid={Boolean(fieldErrors['online-price'])}
+                  />
+                </FormField>
+                <FormField id="product-gst" label="GST %" error={fieldErrors['product-gst']}>
+                  <Input
+                    id="product-gst"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={formData.gst}
+                    onChange={(e) => {
+                      clearFieldError('product-gst')
+                      setFormData({ ...formData, gst: e.target.value === '' ? 0 : Number(e.target.value) })
+                    }}
+                    invalid={Boolean(fieldErrors['product-gst'])}
+                  />
+                </FormField>
+                <FormField id="product-min" label="Min Stock" error={fieldErrors['product-min']}>
+                  <Input
+                    id="product-min"
+                    type="number"
+                    min={0}
+                    value={formData.minStock}
+                    onChange={(e) => {
+                      clearFieldError('product-min')
+                      setFormData({ ...formData, minStock: e.target.value === '' ? 0 : Number(e.target.value) })
+                    }}
+                    invalid={Boolean(fieldErrors['product-min'])}
+                  />
+                </FormField>
+                <FormField id="product-max" label="Max Stock" error={fieldErrors['product-max']}>
+                  <Input
+                    id="product-max"
+                    type="number"
+                    min={0}
+                    value={formData.maxStock}
+                    onChange={(e) => {
+                      clearFieldError('product-max')
+                      setFormData({ ...formData, maxStock: e.target.value === '' ? 0 : Number(e.target.value) })
+                    }}
+                    invalid={Boolean(fieldErrors['product-max'])}
+                  />
+                </FormField>
+                <FormField id="product-hsn" label="HSN" error={fieldErrors['product-hsn']}>
+                  <Input
+                    id="product-hsn"
+                    value={formData.hsn}
+                    onChange={(e) => {
+                      clearFieldError('product-hsn')
+                      setFormData({ ...formData, hsn: e.target.value })
+                    }}
+                    invalid={Boolean(fieldErrors['product-hsn'])}
+                  />
+                </FormField>
+                <FormField id="product-desc" label="Description" error={fieldErrors['product-desc']} className="md:col-span-2">
+                  <Input
+                    id="product-desc"
+                    value={formData.description}
+                    onChange={(e) => {
+                      clearFieldError('product-desc')
+                      setFormData({ ...formData, description: e.target.value })
+                    }}
+                    invalid={Boolean(fieldErrors['product-desc'])}
+                  />
+                </FormField>
+                <FormField id="product-notes" label="Notes" error={fieldErrors['product-notes']}>
+                  <Input
+                    id="product-notes"
+                    value={formData.notes}
+                    onChange={(e) => {
+                      clearFieldError('product-notes')
+                      setFormData({ ...formData, notes: e.target.value })
+                    }}
+                    invalid={Boolean(fieldErrors['product-notes'])}
+                  />
+                </FormField>
                 {!editingId && formData.variants.length === 0 && (
                   <div className="md:col-span-3 space-y-3 rounded-2xl border border-cyan-400/30 bg-cyan-50/60 p-4">
                     <div>
@@ -375,29 +569,33 @@ const Products = () => {
                       </p>
                     </div>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      <div className="space-y-2">
-                        <Label htmlFor="product-stock">Opening quantity</Label>
+                      <FormField id="product-stock" label="Opening quantity" error={fieldErrors['product-stock']} required>
                         <Input
                           id="product-stock"
                           type="number"
                           min={0}
                           value={formData.stock}
-                          onChange={(e) => setFormData({ ...formData, stock: e.target.value === '' ? 0 : Number(e.target.value) })}
-                          required
+                          onChange={(e) => {
+                            clearFieldError('product-stock')
+                            setFormData({ ...formData, stock: e.target.value === '' ? 0 : Number(e.target.value) })
+                          }}
+                          invalid={Boolean(fieldErrors['product-stock'])}
                         />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="purchase-price">Cost per unit</Label>
+                      </FormField>
+                      <FormField id="purchase-price" label="Cost per unit" error={fieldErrors['purchase-price']} required>
                         <Input
                           id="purchase-price"
                           type="number"
                           min={0}
                           step="0.01"
                           value={formData.purchasePrice}
-                          onChange={(e) => setFormData({ ...formData, purchasePrice: e.target.value === '' ? 0 : Number(e.target.value) })}
-                          required
+                          onChange={(e) => {
+                            clearFieldError('purchase-price')
+                            setFormData({ ...formData, purchasePrice: e.target.value === '' ? 0 : Number(e.target.value) })
+                          }}
+                          invalid={Boolean(fieldErrors['purchase-price'])}
                         />
-                      </div>
+                      </FormField>
                       <div className="space-y-2">
                         <Label>Opening value</Label>
                         <div className="flex h-10 items-center rounded-xl border bg-white px-3 text-sm font-semibold">
@@ -460,126 +658,143 @@ const Products = () => {
                       ? 'Existing variant stock cannot be typed here. Add stock with a purchase. New variants can still get opening quantity and cost.'
                       : 'For each variant, enter opening quantity and the cost you paid for that stock.'}
                   </p>
-                  {formData.variants.map((variant, index) => (
-                    <div key={variant._id || index} className="grid grid-cols-2 gap-2 rounded-xl border p-3 md:grid-cols-7">
-                      <div className="space-y-1">
-                        <Label htmlFor={`variant-name-${index}`} className="text-xs">Name</Label>
-                        <Input
-                          id={`variant-name-${index}`}
-                          placeholder="Name"
-                          value={variant.name}
-                          onChange={(e) => {
-                            const variants = [...formData.variants]
-                            variants[index] = { ...variants[index], name: e.target.value }
-                            setFormData({ ...formData, variants })
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor={`variant-sku-${index}`} className="text-xs">SKU</Label>
-                        <Input
-                          id={`variant-sku-${index}`}
-                          placeholder="SKU"
-                          value={variant.sku}
-                          onChange={(e) => {
-                            const variants = [...formData.variants]
-                            variants[index] = { ...variants[index], sku: e.target.value }
-                            setFormData({ ...formData, variants })
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor={`variant-barcode-${index}`} className="text-xs">Barcode</Label>
-                        <Input
-                          id={`variant-barcode-${index}`}
-                          placeholder="Barcode"
-                          value={variant.barcode}
-                          onChange={(e) => {
-                            const variants = [...formData.variants]
-                            variants[index] = { ...variants[index], barcode: e.target.value }
-                            setFormData({ ...formData, variants })
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor={`variant-attr-${index}`} className="text-xs">Size / color</Label>
-                        <Input
-                          id={`variant-attr-${index}`}
-                          placeholder="Size / color"
-                          value={variant.attributes}
-                          onChange={(e) => {
-                            const variants = [...formData.variants]
-                            variants[index] = { ...variants[index], attributes: e.target.value }
-                            setFormData({ ...formData, variants })
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor={`variant-cost-${index}`} className="text-xs">Opening cost</Label>
-                        <Input
-                          id={`variant-cost-${index}`}
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          placeholder="Cost"
-                          value={variant.purchasePrice}
-                          onChange={(e) => {
-                            const variants = [...formData.variants]
-                            variants[index] = { ...variants[index], purchasePrice: e.target.value === '' ? 0 : Number(e.target.value) }
-                            setFormData({ ...formData, variants })
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor={`variant-sell-${index}`} className="text-xs">Selling price</Label>
-                        <Input
-                          id={`variant-sell-${index}`}
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          placeholder="Sell"
-                          value={variant.sellingPrice}
-                          onChange={(e) => {
-                            const variants = [...formData.variants]
-                            variants[index] = { ...variants[index], sellingPrice: e.target.value === '' ? 0 : Number(e.target.value) }
-                            setFormData({ ...formData, variants })
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor={`variant-stock-${index}`} className="text-xs">Opening stock</Label>
-                        <div className="flex gap-2">
+                  {formData.variants.map((variant, index) => {
+                    const nameId = `variant-${index}-name`
+                    const skuId = `variant-${index}-sku`
+                    const barcodeId = `variant-${index}-barcode`
+                    const attributesId = `variant-${index}-attributes`
+                    const purchasePriceId = `variant-${index}-purchasePrice`
+                    const sellingPriceId = `variant-${index}-sellingPrice`
+                    const stockId = `variant-${index}-stock`
+                    return (
+                      <div key={variant._id || index} className="grid grid-cols-2 gap-2 rounded-xl border p-3 md:grid-cols-7">
+                        <FormField id={nameId} label="Name" error={fieldErrors[nameId]} className="space-y-1">
                           <Input
-                            id={`variant-stock-${index}`}
+                            id={nameId}
+                            placeholder="Name"
+                            value={variant.name}
+                            onChange={(e) => {
+                              clearFieldError(nameId)
+                              const variants = [...formData.variants]
+                              variants[index] = { ...variants[index], name: e.target.value }
+                              setFormData({ ...formData, variants })
+                            }}
+                            invalid={Boolean(fieldErrors[nameId])}
+                          />
+                        </FormField>
+                        <FormField id={skuId} label="SKU" error={fieldErrors[skuId]} className="space-y-1">
+                          <Input
+                            id={skuId}
+                            placeholder="SKU"
+                            value={variant.sku}
+                            onChange={(e) => {
+                              clearFieldError(skuId)
+                              const variants = [...formData.variants]
+                              variants[index] = { ...variants[index], sku: e.target.value }
+                              setFormData({ ...formData, variants })
+                            }}
+                            invalid={Boolean(fieldErrors[skuId])}
+                          />
+                        </FormField>
+                        <FormField id={barcodeId} label="Barcode" error={fieldErrors[barcodeId]} className="space-y-1">
+                          <Input
+                            id={barcodeId}
+                            placeholder="Barcode"
+                            value={variant.barcode}
+                            onChange={(e) => {
+                              clearFieldError(barcodeId)
+                              const variants = [...formData.variants]
+                              variants[index] = { ...variants[index], barcode: e.target.value }
+                              setFormData({ ...formData, variants })
+                            }}
+                            invalid={Boolean(fieldErrors[barcodeId])}
+                          />
+                        </FormField>
+                        <FormField id={attributesId} label="Size / color" error={fieldErrors[attributesId]} className="space-y-1">
+                          <Input
+                            id={attributesId}
+                            placeholder="Size / color"
+                            value={variant.attributes}
+                            onChange={(e) => {
+                              clearFieldError(attributesId)
+                              const variants = [...formData.variants]
+                              variants[index] = { ...variants[index], attributes: e.target.value }
+                              setFormData({ ...formData, variants })
+                            }}
+                            invalid={Boolean(fieldErrors[attributesId])}
+                          />
+                        </FormField>
+                        <FormField id={purchasePriceId} label="Opening cost" error={fieldErrors[purchasePriceId]} className="space-y-1">
+                          <Input
+                            id={purchasePriceId}
                             type="number"
                             min={0}
-                            placeholder="Stock"
-                            value={variant.stock}
+                            step="0.01"
+                            placeholder="Cost"
+                            value={variant.purchasePrice}
                             onChange={(e) => {
+                              clearFieldError(purchasePriceId)
                               const variants = [...formData.variants]
-                              variants[index] = { ...variants[index], stock: e.target.value === '' ? 0 : Number(e.target.value) }
-                              const stock = variants.reduce((sum, row) => sum + Number(row.stock || 0), 0)
-                              setFormData({ ...formData, variants, stock })
+                              variants[index] = { ...variants[index], purchasePrice: e.target.value === '' ? 0 : Number(e.target.value) }
+                              setFormData({ ...formData, variants })
                             }}
+                            invalid={Boolean(fieldErrors[purchasePriceId])}
                           />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="px-2 text-red-600"
-                            onClick={() => {
-                              const variants = formData.variants.filter((_, i) => i !== index)
-                              const stock = variants.length
-                                ? variants.reduce((sum, row) => sum + Number(row.stock || 0), 0)
-                                : formData.stock
-                              setFormData({ ...formData, variants, stock })
+                        </FormField>
+                        <FormField id={sellingPriceId} label="Selling price" error={fieldErrors[sellingPriceId]} className="space-y-1">
+                          <Input
+                            id={sellingPriceId}
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            placeholder="Sell"
+                            value={variant.sellingPrice}
+                            onChange={(e) => {
+                              clearFieldError(sellingPriceId)
+                              const variants = [...formData.variants]
+                              variants[index] = { ...variants[index], sellingPrice: e.target.value === '' ? 0 : Number(e.target.value) }
+                              setFormData({ ...formData, variants })
                             }}
-                          >
-                            ×
-                          </Button>
-                        </div>
+                            invalid={Boolean(fieldErrors[sellingPriceId])}
+                          />
+                        </FormField>
+                        <FormField id={stockId} label="Opening stock" error={fieldErrors[stockId]} className="space-y-1">
+                          <div className="flex gap-2">
+                            <Input
+                              id={stockId}
+                              type="number"
+                              min={0}
+                              placeholder="Stock"
+                              value={variant.stock}
+                              onChange={(e) => {
+                                clearFieldError(stockId)
+                                const variants = [...formData.variants]
+                                variants[index] = { ...variants[index], stock: e.target.value === '' ? 0 : Number(e.target.value) }
+                                const stock = variants.reduce((sum, row) => sum + Number(row.stock || 0), 0)
+                                setFormData({ ...formData, variants, stock })
+                              }}
+                              invalid={Boolean(fieldErrors[stockId])}
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="px-2 text-red-600"
+                              onClick={() => {
+                                const variants = formData.variants.filter((_, i) => i !== index)
+                                const stock = variants.length
+                                  ? variants.reduce((sum, row) => sum + Number(row.stock || 0), 0)
+                                  : formData.stock
+                                setFormData({ ...formData, variants, stock })
+                                clearFieldErrors()
+                              }}
+                            >
+                              ×
+                            </Button>
+                          </div>
+                        </FormField>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
               <div className="flex justify-end gap-3">

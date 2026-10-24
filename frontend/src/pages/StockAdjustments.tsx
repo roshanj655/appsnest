@@ -3,12 +3,13 @@ import axios from 'axios'
 import PageHeader from '../components/PageHeader'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import RecordActions from '@/components/RecordActions'
+import { FormField } from '@/components/FormField'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { authHeaders, listItems, listParams } from '@/lib/api'
+import { requiredMsg, useFieldErrors } from '@/lib/formValidation'
 import SearchableSelect, { productSelectOption } from '@/components/SearchableSelect'
 
 type Product = {
@@ -66,6 +67,7 @@ const StockAdjustments = () => {
   const [confirmKind, setConfirmKind] = useState<ConfirmKind | null>(null)
   const [confirmRow, setConfirmRow] = useState<Adjustment | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
+  const { fieldErrors, clearFieldErrors, clearFieldError, showFieldErrors } = useFieldErrors()
 
   const load = async () => {
     try {
@@ -87,10 +89,19 @@ const StockAdjustments = () => {
   const closeForm = () => {
     setShowForm(false)
     setFormData(emptyForm)
+    clearFieldErrors()
+  }
+
+  const openForm = () => {
+    setFormData(emptyForm)
+    setErrorMessage('')
+    clearFieldErrors()
+    setShowForm(true)
   }
 
   const applyReason = (reason: string) => {
     const match = reasons.find((item) => item.value === reason)
+    clearFieldError('adj-reason')
     setFormData((current) => ({
       ...current,
       reason,
@@ -101,15 +112,23 @@ const StockAdjustments = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMessage('')
-    if (!formData.productId) {
-      setErrorMessage('Select a product.')
-      return
-    }
+    clearFieldErrors()
+    const errors: Record<string, string> = {}
+
+    if (!formData.productId) errors['adj-product'] = requiredMsg('Product')
     const product = products.find((row) => row._id === formData.productId)
     if ((product?.variants || []).length && !formData.variantId) {
-      setErrorMessage('Select a variant.')
-      return
+      errors['adj-variant'] = requiredMsg('Variant')
     }
+    if (!Number.isFinite(formData.quantity) || formData.quantity < 1) {
+      errors['adj-qty'] = 'Quantity must be at least 1.'
+    }
+    if (formData.direction === 'in' && formData.unitCost < 0) {
+      errors['adj-cost'] = 'Cost basis cannot be negative.'
+    }
+
+    if (showFieldErrors(errors)) return
+
     try {
       setSaving(true)
       await axios.post('/api/stock-adjustments', formData, authHeaders())
@@ -152,7 +171,7 @@ const StockAdjustments = () => {
         title="Stock Adjustments"
         description="Correct opening stock, damage, loss, and count differences without creating a purchase or sale."
         actions={
-          <Button type="button" onClick={() => (showForm ? closeForm() : setShowForm(true))}>
+          <Button type="button" onClick={() => (showForm ? closeForm() : openForm())}>
             {showForm ? 'Close Form' : 'Add Adjustment'}
           </Button>
         }
@@ -172,33 +191,38 @@ const StockAdjustments = () => {
             {errorMessage && (
               <div className="mb-4 rounded-xl border border-red-600/30 bg-red-50 px-4 py-3 text-sm text-red-800">{errorMessage}</div>
             )}
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} noValidate className="space-y-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="adj-product">Product</Label>
+                <FormField id="adj-product" label="Product" error={fieldErrors['adj-product']} required>
                   <SearchableSelect
                     id="adj-product"
                     value={formData.productId}
-                    onChange={(productId) => setFormData({ ...formData, productId, variantId: '' })}
+                    onChange={(productId) => {
+                      clearFieldError('adj-product')
+                      clearFieldError('adj-variant')
+                      setFormData({ ...formData, productId, variantId: '' })
+                    }}
                     placeholder="Select product"
                     searchPlaceholder="Search name or SKU…"
-                    required
+                    invalid={Boolean(fieldErrors['adj-product'])}
                     options={products.filter((product) => product).map(productSelectOption)}
                   />
-                </div>
+                </FormField>
                 {(() => {
                   const product = products.find((row) => row._id === formData.productId)
                   const variants = product?.variants || []
                   if (!variants.length) return null
                   return (
-                    <div className="space-y-2">
-                      <Label htmlFor="adj-variant">Variant</Label>
+                    <FormField id="adj-variant" label="Variant" error={fieldErrors['adj-variant']} required>
                       <SearchableSelect
                         id="adj-variant"
                         value={formData.variantId}
-                        onChange={(variantId) => setFormData({ ...formData, variantId })}
+                        onChange={(variantId) => {
+                          clearFieldError('adj-variant')
+                          setFormData({ ...formData, variantId })
+                        }}
                         placeholder="Select variant"
-                        required
+                        invalid={Boolean(fieldErrors['adj-variant'])}
                         options={variants.map((variant) => ({
                           value: variant._id,
                           label: variant.name,
@@ -206,64 +230,75 @@ const StockAdjustments = () => {
                           searchText: variant.name
                         }))}
                       />
-                    </div>
+                    </FormField>
                   )
                 })()}
-                <div className="space-y-2">
-                  <Label htmlFor="adj-reason">Reason</Label>
+                <FormField id="adj-reason" label="Reason" error={fieldErrors['adj-reason']}>
                   <SearchableSelect
                     id="adj-reason"
                     value={formData.reason}
                     onChange={applyReason}
+                    invalid={Boolean(fieldErrors['adj-reason'])}
                     options={reasons.map((reason) => ({ value: reason.value, label: reason.label }))}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="adj-direction">Direction</Label>
+                </FormField>
+                <FormField id="adj-direction" label="Direction" error={fieldErrors['adj-direction']}>
                   <SearchableSelect
                     id="adj-direction"
                     value={formData.direction}
-                    onChange={(direction) => setFormData({ ...formData, direction: direction as 'in' | 'out' })}
+                    onChange={(direction) => {
+                      clearFieldError('adj-direction')
+                      clearFieldError('adj-cost')
+                      setFormData({ ...formData, direction: direction as 'in' | 'out' })
+                    }}
+                    invalid={Boolean(fieldErrors['adj-direction'])}
                     options={[
                       { value: 'in', label: 'Stock in' },
                       { value: 'out', label: 'Stock out' }
                     ]}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="adj-qty">Quantity</Label>
+                </FormField>
+                <FormField id="adj-qty" label="Quantity" error={fieldErrors['adj-qty']} required>
                   <Input
                     id="adj-qty"
                     type="number"
                     min={1}
                     value={formData.quantity}
-                    onChange={(e) => setFormData({ ...formData, quantity: Number(e.target.value) })}
-                    required
+                    onChange={(e) => {
+                      clearFieldError('adj-qty')
+                      setFormData({ ...formData, quantity: Number(e.target.value) })
+                    }}
+                    invalid={Boolean(fieldErrors['adj-qty'])}
                   />
-                </div>
+                </FormField>
                 {formData.direction === 'in' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="adj-cost">Cost basis</Label>
+                  <FormField id="adj-cost" label="Cost basis" error={fieldErrors['adj-cost']} required>
                     <Input
                       id="adj-cost"
                       type="number"
                       min={0}
                       step="0.01"
                       value={formData.unitCost}
-                      onChange={(e) => setFormData({ ...formData, unitCost: e.target.value === '' ? 0 : Number(e.target.value) })}
-                      required
+                      onChange={(e) => {
+                        clearFieldError('adj-cost')
+                        setFormData({ ...formData, unitCost: e.target.value === '' ? 0 : Number(e.target.value) })
+                      }}
+                      invalid={Boolean(fieldErrors['adj-cost'])}
                     />
-                  </div>
+                  </FormField>
                 )}
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="adj-notes">Notes</Label>
+                <FormField id="adj-notes" label="Notes" error={fieldErrors['adj-notes']} className="md:col-span-2">
                   <Input
                     id="adj-notes"
                     value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    onChange={(e) => {
+                      clearFieldError('adj-notes')
+                      setFormData({ ...formData, notes: e.target.value })
+                    }}
                     placeholder="Optional details"
+                    invalid={Boolean(fieldErrors['adj-notes'])}
                   />
-                </div>
+                </FormField>
               </div>
               <div className="flex justify-end gap-3">
                 <Button type="button" variant="outline" onClick={closeForm}>Cancel</Button>

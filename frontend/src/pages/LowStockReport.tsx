@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import PageHeader from '../components/PageHeader'
+import ReportChart from '@/components/ReportChart'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -75,6 +76,20 @@ const LowStockReport = () => {
           </div>
         </CardContent>
       </Card>
+
+      <ReportChart
+        title="Low stock quantities"
+        description="Current units remaining for items at or below the threshold."
+        type="bar"
+        layout="vertical"
+        valueFormat="number"
+        xKey="name"
+        data={products.slice(0, 12).map((product: any) => ({
+          name: String(product.name || 'Item').slice(0, 22),
+          value: Number(product.stock || 0)
+        }))}
+        series={[{ key: 'value', name: 'Stock', color: '#f43f5e' }]}
+      />
 
       {/* Products Table */}
       <Card>

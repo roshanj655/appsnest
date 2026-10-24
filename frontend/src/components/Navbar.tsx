@@ -25,10 +25,11 @@ import {
   UserPlus,
   Users,
   Wallet,
+  HandCoins,
   X
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { isSuperAdmin } from '@/lib/auth'
+import { isSuperAdmin, clearAuthSession } from '@/lib/auth'
 import { authHeaders, BUSINESS_UNIT_KEY, listItems, listParams, storedBusinessUnitId } from '@/lib/api'
 import axios from 'axios'
 import SearchableSelect from '@/components/SearchableSelect'
@@ -109,7 +110,10 @@ const Navbar = () => {
         },
         {
           title: 'Finance',
-          items: [{ to: '/expenses', label: 'Misc Expenses', icon: Wallet }]
+          items: [
+            { to: '/expenses', label: 'Misc Expenses', icon: Wallet },
+            { to: '/loans', label: 'Shop Loans', icon: HandCoins }
+          ]
         },
         {
           title: 'Insights',
@@ -165,10 +169,7 @@ const Navbar = () => {
   }, [activeSectionTitle])
 
   const handleLogout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('refreshToken')
-    localStorage.removeItem('user')
-    localStorage.removeItem(BUSINESS_UNIT_KEY)
+    clearAuthSession()
     navigate('/')
   }
 

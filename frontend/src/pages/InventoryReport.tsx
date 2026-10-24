@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import PageHeader from '../components/PageHeader'
+import ReportChart from '@/components/ReportChart'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import axios from 'axios'
+import { topN } from '@/lib/reportCharts'
 
 const InventoryReport = () => {
   const [products, setProducts] = useState<any[]>([])
@@ -59,6 +61,22 @@ const InventoryReport = () => {
             </Card>
           </div>
         }
+      />
+
+      <ReportChart
+        title="Highest inventory value"
+        description="Top items by current stock value at average cost."
+        type="bar"
+        layout="vertical"
+        xKey="name"
+        data={topN(
+          products.map((product) => ({
+            name: String(product.variantName ? `${product.name} (${product.variantName})` : product.name).slice(0, 22),
+            value: Number(product.inventoryValue ?? product.stockValue ?? 0)
+          })),
+          8
+        )}
+        series={[{ key: 'value', name: 'Inventory value', color: '#38bdf8' }]}
       />
 
       {/* Inventory Table */}

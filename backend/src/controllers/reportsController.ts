@@ -4,6 +4,7 @@ import { getProductModel } from '../models/tenant/Product';
 import { getSaleModel } from '../models/tenant/Sale';
 import { getPurchaseModel } from '../models/tenant/Purchase';
 import { getExpenseModel } from '../models/tenant/Expense';
+import { getLoanModel } from '../models/tenant/Loan';
 import { getBusinessUnitModel } from '../models/tenant/BusinessUnit';
 import { mergeFilters, unitScope } from '../utils/businessUnit';
 import { startOfDay, endOfDay, startOfMonth, endOfMonth, subMonths } from 'date-fns';
@@ -257,6 +258,7 @@ export const getProfitReport = async (req: TenantRequest, res: Response) => {
     const Sale = getSaleModel(req.tenantDB!);
     const Purchase = getPurchaseModel(req.tenantDB!);
     const Expense = getExpenseModel(req.tenantDB!);
+    const Loan = getLoanModel(req.tenantDB!);
 
     const dateRange = startDate && endDate
       ? {
@@ -276,17 +278,34 @@ export const getProfitReport = async (req: TenantRequest, res: Response) => {
       status: 'active',
       ...(dateRange ? { expenseDate: dateRange } : {})
     });
+    const loanQuery: any = scoped(req, {
+      status: { $ne: 'cancelled' }
+    });
 
-    const [sales, purchases, expenses, catalog] = await Promise.all([
+    const [sales, purchases, expenses, loans, catalog] = await Promise.all([
       Sale.find(saleQuery),
       Purchase.find(purchaseQuery),
       Expense.find(expenseQuery),
+      Loan.find(loanQuery),
       getProductModel(req.tenantDB!).find()
     ]);
 
     const totalSales = sales.reduce((sum: number, s: any) => sum + s.total, 0);
     const totalPurchases = purchases.reduce((sum: number, p: any) => sum + p.total, 0);
     const totalMiscExpenses = expenses.reduce((sum: number, e: any) => sum + e.amount, 0);
+    const totalLoanInterest = loans.reduce((sum: number, loan: any) => {
+      const payments = (loan.repayments || []).filter((row: any) => row.status !== 'reversed');
+      return (
+        sum +
+        payments.reduce((inner: number, row: any) => {
+          if (dateRange) {
+            const paidAt = new Date(row.paidAt);
+            if (paidAt < dateRange.$gte || paidAt > dateRange.$lte) return inner;
+          }
+          return inner + Number(row.interestAmount || 0);
+        }, 0)
+      );
+    }, 0);
 
     const itemProfits: any[] = [];
     let totalCogs = 0;
@@ -334,7 +353,7 @@ export const getProfitReport = async (req: TenantRequest, res: Response) => {
     }
 
     const grossProfit = totalRevenue - totalCogs;
-    const netProfit = grossProfit - totalMiscExpenses;
+    const netProfit = money2(grossProfit - totalMiscExpenses - totalLoanInterest);
 
     res.json({
       totalSales,
@@ -342,10 +361,12 @@ export const getProfitReport = async (req: TenantRequest, res: Response) => {
       totalCogs,
       totalPurchases,
       totalMiscExpenses,
-      totalExpenses: totalMiscExpenses,
+      totalLoanInterest: money2(totalLoanInterest),
+      totalExpenses: money2(totalMiscExpenses + totalLoanInterest),
       grossProfit,
       netProfit,
       profitMargin: totalRevenue > 0 ? money2((grossProfit / totalRevenue) * 100) : 0,
+      note: 'Loan principal is excluded from profit. Only loan interest paid affects net profit.',
       itemProfits
     });
   } catch (error) {

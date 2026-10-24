@@ -20,6 +20,7 @@ type Props = {
   emptyLabel?: string
   required?: boolean
   disabled?: boolean
+  invalid?: boolean
   className?: string
 }
 
@@ -39,6 +40,7 @@ export default function SearchableSelect({
   emptyLabel,
   required,
   disabled,
+  invalid,
   className
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -89,6 +91,7 @@ export default function SearchableSelect({
         id={id}
         type="text"
         disabled={disabled}
+        invalid={invalid}
         autoComplete="off"
         className="h-11 w-full bg-white text-slate-900"
         placeholder={searchPlaceholder || placeholder}

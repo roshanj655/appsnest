@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 import PageHeader from '../components/PageHeader'
@@ -9,7 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import RecordActions from '@/components/RecordActions'
+import { FormField, FieldError } from '@/components/FormField'
 import { authHeaders, listItems, listParams } from '@/lib/api'
+import { emailMsg, isValidEmail, requiredMsg, useFieldErrors } from '@/lib/formValidation'
 import { BusinessUnitSelect, defaultUnitFormValue } from '@/components/BusinessUnitSelect'
 import SearchableSelect, { partySelectOption, productSelectOption } from '@/components/SearchableSelect'
 
@@ -36,8 +37,11 @@ const Purchases = () => {
   const [showAttachmentDialog, setShowAttachmentDialog] = useState(false)
   const [selectedPurchase, setSelectedPurchase] = useState<any>(null)
   const [emailTo, setEmailTo] = useState('')
+  const [emailError, setEmailError] = useState('')
+  const [emailBusy, setEmailBusy] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [newAttachmentFiles, setNewAttachmentFiles] = useState<File[]>([])
+  const [formError, setFormError] = useState('')
   const [formData, setFormData] = useState<{
     supplierId: string
     supplierInvoiceNumber: string
@@ -53,6 +57,13 @@ const Purchases = () => {
     items: [],
     status: 'completed'
   })
+  const { fieldErrors, clearFieldErrors, clearFieldError, showFieldErrors } = useFieldErrors()
+  const {
+    fieldErrors: emailFieldErrors,
+    clearFieldErrors: clearEmailFieldErrors,
+    clearFieldError: clearEmailFieldError,
+    showFieldErrors: showEmailFieldErrors
+  } = useFieldErrors()
 
   useEffect(() => {
     fetchData()
@@ -139,6 +150,32 @@ const Purchases = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFormError('')
+    clearFieldErrors()
+    const errors: Record<string, string> = {}
+    if (formData.paidAmount < 0) errors['purchase-paid'] = 'Paid amount cannot be negative.'
+    if (!formData.items.length) {
+      errors['purchase-items'] = 'Add at least one product line to this purchase.'
+    } else {
+      formData.items.forEach((item, index) => {
+        if (!item.productId) errors[`purchase-item-${index}-product`] = requiredMsg('Product')
+        const product = products.find((row: any) => row._id === item.productId)
+        const variants = product?.variants || []
+        if (item.productId && variants.length && !item.variantId) {
+          errors[`purchase-item-${index}-variant`] = requiredMsg('Variant')
+        }
+        if (!item.quantity || item.quantity <= 0) {
+          errors[`purchase-item-${index}-qty`] = 'Quantity must be greater than zero.'
+        }
+        if (item.price < 0) {
+          errors[`purchase-item-${index}-price`] = 'Price cannot be negative.'
+        }
+        if (item.discount < 0) {
+          errors[`purchase-item-${index}-discount`] = 'Discount cannot be negative.'
+        }
+      })
+    }
+    if (showFieldErrors(errors)) return
     try {
       const token = localStorage.getItem('token')
       const totals = calculateTotals()
@@ -175,16 +212,20 @@ const Purchases = () => {
       }
       setShowForm(false)
       setEditingId(null)
+      clearFieldErrors()
       setFormData({ supplierId: '', supplierInvoiceNumber: '', paidAmount: 0, businessUnitId: defaultUnitFormValue(), items: [], status: 'completed' })
       setSelectedFiles([])
       fetchData()
-    } catch (err) {
+    } catch (err: any) {
+      setFormError(err.response?.data?.message || 'Unable to save purchase.')
       console.error(err)
     }
   }
 
   const openEdit = (purchase: any) => {
     setEditingId(purchase._id)
+    setFormError('')
+    clearFieldErrors()
     setFormData({
       supplierId: purchase.supplierId?._id || purchase.supplierId || '',
       supplierInvoiceNumber: purchase.supplierInvoiceNumber || '',
@@ -266,21 +307,32 @@ const Purchases = () => {
     }
   }
 
-  const sendEmail = async () => {
+  const sendEmail = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    if (!selectedPurchase) return
+    setEmailError('')
+    clearEmailFieldErrors()
+    const errors: Record<string, string> = {}
+    if (!emailTo.trim()) errors['purchase-email-to'] = requiredMsg('Recipient email')
+    else if (!isValidEmail(emailTo)) errors['purchase-email-to'] = emailMsg
+    if (showEmailFieldErrors(errors)) return
+    setEmailBusy(true)
     try {
       const token = localStorage.getItem('token')
       await axios.post(`/api/purchases/${selectedPurchase._id}/email`, {
-        to: emailTo
+        to: emailTo.trim()
       }, {
         headers: { Authorization: `Bearer ${token}` }
       })
-      alert('Purchase invoice sent successfully!')
       setShowEmailDialog(false)
       setSelectedPurchase(null)
       setEmailTo('')
-    } catch (err) {
+      clearEmailFieldErrors()
+    } catch (err: any) {
+      setEmailError(err.response?.data?.message || 'Failed to send invoice.')
       console.error('Error sending email:', err)
-      alert('Failed to send invoice')
+    } finally {
+      setEmailBusy(false)
     }
   }
 
@@ -317,8 +369,11 @@ const Purchases = () => {
             if (showForm) {
               setShowForm(false)
               setEditingId(null)
+              clearFieldErrors()
             } else {
               setEditingId(null)
+              setFormError('')
+              clearFieldErrors()
               setFormData({ supplierId: '', supplierInvoiceNumber: '', paidAmount: 0, businessUnitId: defaultUnitFormValue(), items: [], status: 'completed' })
               setShowForm(true)
             }
@@ -328,152 +383,190 @@ const Purchases = () => {
         }
       />
 
+      {formError && (
+        <div className="rounded-xl border border-red-600/30 bg-red-50 px-4 py-3 text-sm text-red-800">{formError}</div>
+      )}
+
       {showForm && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">{editingId ? 'Edit Purchase' : 'Create New Purchase'}</CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} noValidate className="space-y-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div className="space-y-1">
-                  <Label htmlFor="supplier">Supplier</Label>
+                <FormField id="purchase-supplier" label="Supplier" error={fieldErrors['purchase-supplier']}>
                   <SearchableSelect
-                    id="supplier"
+                    id="purchase-supplier"
                     value={formData.supplierId}
-                    onChange={(supplierId) => setFormData({ ...formData, supplierId })}
+                    onChange={(supplierId) => {
+                      clearFieldError('purchase-supplier')
+                      setFormData({ ...formData, supplierId })
+                    }}
                     placeholder="Select supplier"
                     searchPlaceholder="Search name, phone, or address…"
                     emptyLabel="Select supplier"
                     options={suppliers.map(partySelectOption)}
+                    invalid={Boolean(fieldErrors['purchase-supplier'])}
                   />
-                </div>
+                </FormField>
                 <BusinessUnitSelect
                   value={formData.businessUnitId}
-                  onChange={(businessUnitId) => setFormData({ ...formData, businessUnitId })}
+                  onChange={(businessUnitId) => {
+                    clearFieldError('business-unit')
+                    setFormData({ ...formData, businessUnitId })
+                  }}
+                  error={fieldErrors['business-unit']}
                 />
-                <div className="space-y-1">
-                  <Label htmlFor="supplier-invoice">Supplier Invoice No.</Label>
+                <FormField id="purchase-invoice" label="Supplier Invoice No." error={fieldErrors['purchase-invoice']}>
                   <Input
-                    id="supplier-invoice"
+                    id="purchase-invoice"
                     value={formData.supplierInvoiceNumber}
-                    onChange={(e) => setFormData({ ...formData, supplierInvoiceNumber: e.target.value })}
+                    onChange={(e) => {
+                      clearFieldError('purchase-invoice')
+                      setFormData({ ...formData, supplierInvoiceNumber: e.target.value })
+                    }}
+                    invalid={Boolean(fieldErrors['purchase-invoice'])}
                   />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="paid-amount">Paid Amount</Label>
+                </FormField>
+                <FormField id="purchase-paid" label="Paid Amount" error={fieldErrors['purchase-paid']}>
                   <Input
-                    id="paid-amount"
+                    id="purchase-paid"
                     type="number"
                     min={0}
                     step="0.01"
                     value={formData.paidAmount}
-                    onChange={(e) => setFormData({ ...formData, paidAmount: e.target.value === '' ? 0 : Number(e.target.value) })}
+                    onChange={(e) => {
+                      clearFieldError('purchase-paid')
+                      setFormData({ ...formData, paidAmount: e.target.value === '' ? 0 : Number(e.target.value) })
+                    }}
+                    invalid={Boolean(fieldErrors['purchase-paid'])}
                   />
-                </div>
+                </FormField>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2" data-field="purchase-items">
                 <div className="flex justify-between items-center">
-                  <Label>Items</Label>
-                  <Button type="button" variant="secondary" onClick={addItem}>
+                  <Label>Items{formData.items.length === 0 ? <span className="text-red-600"> *</span> : null}</Label>
+                  <Button type="button" variant="secondary" onClick={() => { clearFieldError('purchase-items'); addItem() }}>
                     + Add Item
                   </Button>
                 </div>
+                <FieldError id="purchase-items" error={fieldErrors['purchase-items']} />
                 {formData.items.map((item: any, index: number) => (
                   <div key={index} className="grid grid-cols-2 gap-2 rounded-xl border p-3 md:grid-cols-7">
-                    <div className="space-y-1">
-                      <Label htmlFor={`pur-product-${index}`} className="text-xs font-semibold">Product</Label>
+                    <FormField
+                      id={`purchase-item-${index}-product`}
+                      label="Product"
+                      error={fieldErrors[`purchase-item-${index}-product`]}
+                      required
+                    >
                       <SearchableSelect
-                        id={`pur-product-${index}`}
+                        id={`purchase-item-${index}-product`}
                         value={item.productId}
-                        onChange={(productId) => updateItem(index, 'productId', productId)}
+                        onChange={(productId) => {
+                          clearFieldError(`purchase-item-${index}-product`)
+                          clearFieldError(`purchase-item-${index}-variant`)
+                          updateItem(index, 'productId', productId)
+                        }}
                         placeholder="Select product"
                         searchPlaceholder="Search name, SKU, or barcode…"
-                        required
                         options={products.map((product: any) => productSelectOption({
                           ...product,
                           purchasePrice: product.purchasePrice,
                           sellingPrice: product.sellingPrice
                         }))}
+                        invalid={Boolean(fieldErrors[`purchase-item-${index}-product`])}
                       />
-                    </div>
+                    </FormField>
                     {(() => {
                       const product = products.find((row: any) => row._id === item.productId)
                       const variants = product?.variants || []
                       if (!variants.length) return <div className="hidden md:block" />
                       return (
-                        <div className="space-y-1">
-                          <Label htmlFor={`pur-variant-${index}`} className="text-xs font-semibold">Variant</Label>
+                        <FormField
+                          id={`purchase-item-${index}-variant`}
+                          label="Variant"
+                          error={fieldErrors[`purchase-item-${index}-variant`]}
+                          required
+                        >
                           <SearchableSelect
-                            id={`pur-variant-${index}`}
+                            id={`purchase-item-${index}-variant`}
                             value={item.variantId}
-                            onChange={(variantId) => updateItem(index, 'variantId', variantId)}
+                            onChange={(variantId) => {
+                              clearFieldError(`purchase-item-${index}-variant`)
+                              updateItem(index, 'variantId', variantId)
+                            }}
                             placeholder="Select variant"
-                            required
                             options={variants.map((variant: any) => ({
                               value: String(variant._id),
                               label: variant.name,
                               description: `Stock ${variant.stock}${variant.sku ? ` · ${variant.sku}` : ''}`,
                               searchText: `${variant.name} ${variant.sku || ''} ${variant.barcode || ''}`
                             }))}
+                            invalid={Boolean(fieldErrors[`purchase-item-${index}-variant`])}
                           />
-                        </div>
+                        </FormField>
                       )
                     })()}
-                    <div className="space-y-1">
-                      <Label htmlFor={`pur-qty-${index}`} className="text-xs font-semibold">Quantity</Label>
+                    <FormField id={`purchase-item-${index}-qty`} label="Quantity" error={fieldErrors[`purchase-item-${index}-qty`]} required>
                       <Input
-                        id={`pur-qty-${index}`}
+                        id={`purchase-item-${index}-qty`}
                         type="number"
                         placeholder="Qty"
                         value={item.quantity}
-                        onChange={(e) => updateItem(index, 'quantity', e.target.value === '' ? 0 : Number(e.target.value))}
-                        required
+                        onChange={(e) => {
+                          clearFieldError(`purchase-item-${index}-qty`)
+                          updateItem(index, 'quantity', e.target.value === '' ? 0 : Number(e.target.value))
+                        }}
+                        invalid={Boolean(fieldErrors[`purchase-item-${index}-qty`])}
                       />
-                    </div>
-                    <div className="space-y-1">
-                      <Label htmlFor={`pur-price-${index}`} className="text-xs font-semibold">Price</Label>
+                    </FormField>
+                    <FormField id={`purchase-item-${index}-price`} label="Price" error={fieldErrors[`purchase-item-${index}-price`]} required>
                       <Input
-                        id={`pur-price-${index}`}
+                        id={`purchase-item-${index}-price`}
                         type="number"
                         placeholder="Price"
                         value={item.price}
-                        onChange={(e) => updateItem(index, 'price', e.target.value === '' ? 0 : Number(e.target.value))}
-                        required
+                        onChange={(e) => {
+                          clearFieldError(`purchase-item-${index}-price`)
+                          updateItem(index, 'price', e.target.value === '' ? 0 : Number(e.target.value))
+                        }}
+                        invalid={Boolean(fieldErrors[`purchase-item-${index}-price`])}
                       />
-                    </div>
-                    <div className="space-y-1">
-                      <Label htmlFor={`pur-discount-${index}`} className="text-xs font-semibold">Discount</Label>
+                    </FormField>
+                    <FormField id={`purchase-item-${index}-discount`} label="Discount" error={fieldErrors[`purchase-item-${index}-discount`]}>
                       <Input
-                        id={`pur-discount-${index}`}
+                        id={`purchase-item-${index}-discount`}
                         type="number"
                         placeholder="Discount"
                         value={item.discount}
-                        onChange={(e) => updateItem(index, 'discount', e.target.value === '' ? 0 : Number(e.target.value))}
+                        onChange={(e) => {
+                          clearFieldError(`purchase-item-${index}-discount`)
+                          updateItem(index, 'discount', e.target.value === '' ? 0 : Number(e.target.value))
+                        }}
+                        invalid={Boolean(fieldErrors[`purchase-item-${index}-discount`])}
                       />
-                    </div>
-                    <div className="space-y-1">
-                      <Label htmlFor={`pur-gst-${index}`} className="text-xs font-semibold">GST %</Label>
+                    </FormField>
+                    <FormField id={`purchase-item-${index}-gst`} label="GST %">
                       <Input
-                        id={`pur-gst-${index}`}
+                        id={`purchase-item-${index}-gst`}
                         type="number"
                         placeholder="GST %"
                         value={item.gst}
                         onChange={(e) => updateItem(index, 'gst', e.target.value === '' ? 0 : Number(e.target.value))}
                       />
-                    </div>
-                    <div className="space-y-1">
-                      <Label htmlFor={`pur-total-${index}`} className="text-xs font-semibold">Line Total</Label>
+                    </FormField>
+                    <FormField id={`purchase-item-${index}-total`} label="Line Total">
                       <Input
-                        id={`pur-total-${index}`}
+                        id={`purchase-item-${index}-total`}
                         type="number"
                         placeholder="Total"
                         value={item.total}
                         readOnly
                         className="bg-gray-100"
                       />
-                    </div>
+                    </FormField>
                   </div>
                 ))}
               </div>
@@ -613,6 +706,8 @@ const Purchases = () => {
                           onClick={() => {
                             setSelectedPurchase(purchase)
                             setEmailTo(purchase.supplierId?.email || '')
+                            setEmailError('')
+                            clearEmailFieldErrors()
                             setShowEmailDialog(true)
                           }}
                           className="text-xs p-0 h-auto text-emerald-600"
@@ -649,33 +744,43 @@ const Purchases = () => {
             <CardHeader>
               <CardTitle className="text-lg">Send Purchase Invoice</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1">
-                <Label htmlFor="emailTo">To:</Label>
-                <Input
-                  id="emailTo"
-                  type="email"
-                  value={emailTo}
-                  onChange={(e) => setEmailTo(e.target.value)}
-                  placeholder="email@example.com"
-                  required
-                />
-              </div>
-              <div className="flex gap-2 justify-end">
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setShowEmailDialog(false)
-                    setSelectedPurchase(null)
-                    setEmailTo('')
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={sendEmail}>
-                  Send
-                </Button>
-              </div>
+            <CardContent>
+              {emailError && (
+                <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{emailError}</div>
+              )}
+              <form onSubmit={sendEmail} noValidate className="space-y-4">
+                <FormField id="purchase-email-to" label="To" error={emailFieldErrors['purchase-email-to']} required>
+                  <Input
+                    id="purchase-email-to"
+                    type="email"
+                    value={emailTo}
+                    onChange={(e) => {
+                      clearEmailFieldError('purchase-email-to')
+                      setEmailTo(e.target.value)
+                    }}
+                    placeholder="email@example.com"
+                    invalid={Boolean(emailFieldErrors['purchase-email-to'])}
+                  />
+                </FormField>
+                <div className="flex gap-2 justify-end">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setShowEmailDialog(false)
+                      setSelectedPurchase(null)
+                      setEmailTo('')
+                      setEmailError('')
+                      clearEmailFieldErrors()
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={emailBusy}>
+                    {emailBusy ? 'Sending…' : 'Send'}
+                  </Button>
+                </div>
+              </form>
             </CardContent>
           </Card>
         </div>

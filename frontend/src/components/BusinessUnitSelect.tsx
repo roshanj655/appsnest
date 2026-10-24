@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
-import { Label } from '@/components/ui/label'
+import { FormField } from '@/components/FormField'
 import { authHeaders, listItems, listParams, storedBusinessUnitId } from '@/lib/api'
 import SearchableSelect from '@/components/SearchableSelect'
 
@@ -12,6 +12,8 @@ type Props = {
   onChange: (value: string) => void
   label?: string
   allowUnassigned?: boolean
+  error?: string
+  required?: boolean
 }
 
 export const defaultUnitFormValue = () => storedBusinessUnitId()
@@ -21,7 +23,9 @@ export const BusinessUnitSelect = ({
   value,
   onChange,
   label = 'Business unit',
-  allowUnassigned = true
+  allowUnassigned = true,
+  error,
+  required
 }: Props) => {
   const [units, setUnits] = useState<Unit[]>([])
 
@@ -33,14 +37,13 @@ export const BusinessUnitSelect = ({
   }, [])
 
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id} className="text-xs font-semibold">
-        {label}
-      </Label>
+    <FormField id={id} label={label} error={error} required={required}>
       <SearchableSelect
         id={id}
         value={value}
         onChange={onChange}
+        invalid={Boolean(error)}
+        required={required}
         emptyLabel={allowUnassigned ? 'Unassigned' : undefined}
         placeholder="Select business unit"
         searchPlaceholder="Search unit name or code…"
@@ -50,6 +53,6 @@ export const BusinessUnitSelect = ({
           searchText: `${unit.name} ${unit.code}`
         }))}
       />
-    </div>
+    </FormField>
   )
 }
