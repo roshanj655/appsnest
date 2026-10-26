@@ -207,13 +207,13 @@ const Navbar = () => {
             : 'border-b border-white/10 bg-[#0b1119]/90'
         ].join(' ')}
       >
-        <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
+        <div className="flex h-14 items-center justify-between gap-2 px-3 sm:h-16 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <Button
               variant="outline"
               size="icon"
               className={[
-                'lg:hidden',
+                'h-11 w-11 shrink-0 lg:hidden',
                 isLightTheme
                   ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900'
                   : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 hover:text-white'
@@ -221,7 +221,7 @@ const Navbar = () => {
               onClick={() => setMenuOpen(true)}
               aria-label="Open navigation"
             >
-              <Menu className="h-4 w-4" />
+              <Menu className="h-5 w-5" />
             </Button>
             <div
               className={[
@@ -233,37 +233,37 @@ const Navbar = () => {
             >
               <MoonStar className="h-4 w-4" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p
                 className={[
-                  'text-[10px] font-semibold uppercase tracking-[0.28em]',
+                  'hidden text-[10px] font-semibold uppercase tracking-[0.28em] sm:block',
                   isLightTheme ? 'text-cyan-700/80' : 'text-cyan-300/70'
                 ].join(' ')}
               >
                 Hud Console
               </p>
-              <h1 className={['text-base font-semibold', isLightTheme ? 'text-slate-900' : 'text-white'].join(' ')}>
+              <h1 className={['truncate text-sm font-semibold sm:text-base', isLightTheme ? 'text-slate-900' : 'text-white'].join(' ')}>
                 {currentLabel}
               </h1>
             </div>
-            {!superAdmin && (
-              <SearchableSelect
-                id="nav-unit-mobile"
-                value={selectedUnit}
-                onChange={changeUnit}
-                className="w-[11rem] lg:hidden"
-                options={[
-                  { value: 'all', label: 'All units' },
-                  ...units.map((unit) => ({
-                    value: unit._id,
-                    label: unit.name,
-                    description: unit.code,
-                    searchText: `${unit.name} ${unit.code}`
-                  }))
-                ]}
-              />
-            )}
           </div>
+          {!superAdmin && (
+            <SearchableSelect
+              id="nav-unit-mobile"
+              value={selectedUnit}
+              onChange={changeUnit}
+              className="w-[9.5rem] shrink-0 sm:w-[11rem] lg:hidden"
+              options={[
+                { value: 'all', label: 'All units' },
+                ...units.map((unit) => ({
+                  value: unit._id,
+                  label: unit.name,
+                  description: unit.code,
+                  searchText: `${unit.name} ${unit.code}`
+                }))
+              ]}
+            />
+          )}
 
           <div className="hidden items-center gap-3 lg:flex">
             {!superAdmin && (
@@ -432,7 +432,7 @@ const Navbar = () => {
                               onClick={() => setMenuOpen(false)}
                               className={({ isActive }) =>
                                 [
-                                  'group flex items-center gap-2 rounded-lg border px-2 py-1.5 text-[13px] font-medium transition-all duration-200',
+                                  'group flex min-h-11 items-center gap-2 rounded-lg border px-2.5 py-2 text-[13px] font-medium transition-all duration-200 sm:min-h-0 sm:py-1.5',
                                   isActive
                                     ? isLightTheme
                                       ? 'border-cyan-200 bg-cyan-50 text-cyan-900 shadow-sm'

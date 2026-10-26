@@ -46,7 +46,7 @@ const ConfirmDialog = ({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
       <button
         type="button"
         className="absolute inset-0 bg-slate-950/50"
@@ -59,7 +59,7 @@ const ConfirmDialog = ({
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
         aria-describedby="confirm-dialog-description"
-        className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card p-6 text-card-foreground"
+        className="relative z-10 w-full max-w-md rounded-t-2xl border border-border bg-card p-5 text-card-foreground safe-bottom sm:rounded-2xl sm:p-6"
       >
         <h2 id="confirm-dialog-title" className="text-lg font-semibold text-foreground">
           {title}
@@ -67,12 +67,13 @@ const ConfirmDialog = ({
         <p id="confirm-dialog-description" className="mt-2 text-sm text-muted-foreground">
           {description}
         </p>
-        <div className="mt-6 flex justify-end gap-3">
-          <Button type="button" variant="outline" disabled={busy} onClick={onCancel}>
+        <div className="mt-6 grid grid-cols-1 gap-3 sm:flex sm:justify-end">
+          <Button type="button" variant="outline" className="min-h-11 w-full sm:w-auto" disabled={busy} onClick={onCancel}>
             {cancelLabel}
           </Button>
           <Button
             type="button"
+            className="min-h-11 w-full sm:w-auto"
             variant={variant === 'destructive' ? 'destructive' : 'default'}
             disabled={busy}
             onClick={onConfirm}

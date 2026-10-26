@@ -53,8 +53,13 @@
   * {
     @apply border-border;
   }
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
   body {
     @apply bg-background text-foreground antialiased text-sm;
+    overscroll-behavior-y: none;
   }
 
   #root {
@@ -63,8 +68,31 @@
 
   input,
   select,
-  textarea {
+  textarea,
+  button {
     @apply transition-all;
+    touch-action: manipulation;
+  }
+}
+
+@layer utilities {
+  .safe-bottom {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 640px) {
+  .page-header {
+    @apply mb-4 rounded-2xl px-3 py-3;
+  }
+
+  table th,
+  table td {
+    @apply px-2 py-2 text-xs;
+  }
+
+  table th {
+    letter-spacing: 0.08em;
   }
 }
 

@@ -23,6 +23,14 @@ type CartItem = {
   stock: number
 }
 
+type Suggestion = {
+  key: string
+  product: any
+  variant: any | null
+  label: string
+  description: string
+}
+
 const cartKey = (item: { productId: string; variantId?: string }) => `${item.productId}:${item.variantId || ''}`
 
 const lineTotal = (item: CartItem) => {
@@ -30,12 +38,76 @@ const lineTotal = (item: CartItem) => {
   return base + (base * (item.gst || 0)) / 100
 }
 
+const buildSuggestions = (products: any[], query: string): Suggestion[] => {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+  const rows: Suggestion[] = []
+  for (const product of products) {
+    if (product.status === 'inactive') continue
+    const variants = product.variants || []
+    if (variants.length) {
+      for (const variant of variants) {
+        const haystack = [
+          product.name,
+          product.sku,
+          product.barcode,
+          variant.name,
+          variant.sku,
+          variant.barcode
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        if (!haystack.includes(q) && !q.split(/\s+/).every((part) => haystack.includes(part))) continue
+        rows.push({
+          key: `${product._id}:${variant._id}`,
+          product,
+          variant,
+          label: `${product.name} (${variant.name})`,
+          description: [
+            variant.sku || product.sku,
+            `Stock ${Number(variant.stock || 0)}`,
+            `₹${Number(variant.sellingPrice ?? product.sellingPrice ?? 0).toFixed(2)}`
+          ]
+            .filter(Boolean)
+            .join(' · ')
+        })
+      }
+    } else {
+      const haystack = [product.name, product.sku, product.barcode, product.brand]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      if (!haystack.includes(q) && !q.split(/\s+/).every((part) => haystack.includes(part))) continue
+      rows.push({
+        key: `${product._id}:`,
+        product,
+        variant: null,
+        label: product.name,
+        description: [
+          product.sku,
+          `Stock ${Number(product.stock || 0)}`,
+          `₹${Number(product.sellingPrice || 0).toFixed(2)}`
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      })
+    }
+  }
+  return rows.slice(0, 12)
+}
+
 const Pos = () => {
   const scanRef = useRef<HTMLInputElement>(null)
+  const suggestRef = useRef<HTMLDivElement>(null)
   const [scan, setScan] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [customers, setCustomers] = useState<any[]>([])
   const [recent, setRecent] = useState<any[]>([])
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  const [suggestOpen, setSuggestOpen] = useState(false)
+  const [activeSuggest, setActiveSuggest] = useState(0)
+  const [suggestLoading, setSuggestLoading] = useState(false)
   const [customerId, setCustomerId] = useState('')
   const [paymentMode, setPaymentMode] = useState('cash')
   const [paidAmount, setPaidAmount] = useState(0)
@@ -75,10 +147,58 @@ const Pos = () => {
     setPaidAmount(Number(totals.total.toFixed(2)))
   }, [totals.total])
 
-  const addProduct = (product: any) => {
-    const variant = product.matchedVariant
+  useEffect(() => {
+    const q = scan.trim()
+    if (q.length < 2) {
+      setSuggestions([])
+      setSuggestOpen(false)
+      setSuggestLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      setSuggestLoading(true)
+      try {
+        const res = await axios.get('/api/products', {
+          ...authHeaders(),
+          params: { search: q, page: 1, limit: 30 }
+        })
+        if (cancelled) return
+        const rows = buildSuggestions(listItems(res.data), q)
+        setSuggestions(rows)
+        setSuggestOpen(rows.length > 0)
+        setActiveSuggest(0)
+      } catch {
+        if (!cancelled) {
+          setSuggestions([])
+          setSuggestOpen(false)
+        }
+      } finally {
+        if (!cancelled) setSuggestLoading(false)
+      }
+    }, 220)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [scan])
+
+  useEffect(() => {
+    const onDocDown = (event: MouseEvent) => {
+      if (!suggestRef.current?.contains(event.target as Node) && event.target !== scanRef.current) {
+        setSuggestOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocDown)
+    return () => document.removeEventListener('mousedown', onDocDown)
+  }, [])
+
+  const addProduct = (product: any, matchedVariant: any | null = product.matchedVariant ?? null) => {
+    const variant = matchedVariant
     if ((product.variants || []).length && !variant) {
-      setMessage(`Scan a variant barcode for ${product.name}.`)
+      setMessage(`Choose a variant for ${product.name}.`)
       return
     }
     const variantId = variant?._id ? String(variant._id) : ''
@@ -117,6 +237,16 @@ const Pos = () => {
         }
       ]
     })
+    setMessage(`Added ${name}`)
+  }
+
+  const pickSuggestion = (row: Suggestion) => {
+    clearFieldErrors()
+    addProduct(row.product, row.variant)
+    setScan('')
+    setSuggestions([])
+    setSuggestOpen(false)
+    focusScan()
   }
 
   const handleScan = async (e: React.FormEvent) => {
@@ -124,9 +254,15 @@ const Pos = () => {
     clearFieldError('pos-scan')
     const code = scan.trim()
     if (!code) {
-      showFieldErrors({ 'pos-scan': requiredMsg('Barcode / SKU') })
+      showFieldErrors({ 'pos-scan': requiredMsg('Barcode / SKU / name') })
       return
     }
+
+    if (suggestOpen && suggestions[activeSuggest]) {
+      pickSuggestion(suggestions[activeSuggest])
+      return
+    }
+
     setMessage('')
     try {
       const res = await axios.get('/api/products/lookup', {
@@ -134,11 +270,21 @@ const Pos = () => {
         params: { code }
       })
       clearFieldErrors()
-      addProduct(res.data)
+      addProduct(res.data, res.data.matchedVariant || null)
       setScan('')
+      setSuggestions([])
+      setSuggestOpen(false)
     } catch (err: any) {
-      setMessage(err.response?.data?.message || 'Barcode not found.')
-      setScan('')
+      if (suggestions.length === 1) {
+        pickSuggestion(suggestions[0])
+        return
+      }
+      if (suggestions.length > 1) {
+        setSuggestOpen(true)
+        setMessage('Pick a product from the suggestions.')
+        return
+      }
+      setMessage(err.response?.data?.message || 'No matching product. Try typing the name for suggestions.')
     } finally {
       focusScan()
     }
@@ -163,7 +309,7 @@ const Pos = () => {
     clearFieldErrors()
     const errors: Record<string, string> = {}
     if (!cart.length) {
-      errors['pos-cart'] = 'Scan at least one item before checkout.'
+      errors['pos-cart'] = 'Add at least one item before checkout.'
     } else {
       cart.forEach((item, index) => {
         if (!item.quantity || item.quantity <= 0) {
@@ -238,21 +384,21 @@ const Pos = () => {
   }, [checkout])
 
   return (
-    <div className="space-y-4 p-4 sm:p-6 lg:p-8">
+    <div className="space-y-4 p-3 pb-28 sm:p-6 sm:pb-8 lg:p-8">
       <PageHeader
         title="POS counter"
-        description="Scan first. F12 completes the bill and reprints as a POS slip."
+        description="Type a name (e.g. dona) for suggestions, or scan barcode/SKU. F12 completes the bill."
         actions={
           lastSale ? (
-            <Button type="button" variant="outline" onClick={() => printPosReceipt(lastSale._id, { reprint: true })}>
-              Reprint last POS
+            <Button type="button" variant="outline" className="min-h-11" onClick={() => printPosReceipt(lastSale._id, { reprint: true })}>
+              Reprint last
             </Button>
           ) : null
         }
       />
 
-      <form onSubmit={handleScan} noValidate className="rounded-2xl border bg-card p-4">
-        <FormField id="pos-scan" label="Barcode / SKU" error={fieldErrors['pos-scan']} required>
+      <form onSubmit={handleScan} noValidate className="relative rounded-2xl border bg-card p-3 sm:p-4">
+        <FormField id="pos-scan" label="Search / scan item" error={fieldErrors['pos-scan']} required>
           <Input
             id="pos-scan"
             ref={scanRef}
@@ -261,30 +407,83 @@ const Pos = () => {
             onChange={(e) => {
               clearFieldError('pos-scan')
               setScan(e.target.value)
+              setSuggestOpen(true)
             }}
-            placeholder="Scan item and press Enter"
-            className="h-14 text-xl"
+            onFocus={() => {
+              if (suggestions.length) setSuggestOpen(true)
+            }}
+            onKeyDown={(event) => {
+              if (!suggestOpen || !suggestions.length) return
+              if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                setActiveSuggest((current) => Math.min(current + 1, suggestions.length - 1))
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault()
+                setActiveSuggest((current) => Math.max(current - 1, 0))
+              } else if (event.key === 'Escape') {
+                setSuggestOpen(false)
+              }
+            }}
+            placeholder="Type name like dona, or scan barcode"
+            className="h-14 text-lg sm:text-xl"
             autoComplete="off"
+            inputMode="search"
+            enterKeyHint="search"
             invalid={Boolean(fieldErrors['pos-scan'])}
           />
         </FormField>
+        {suggestOpen && scan.trim().length >= 2 && (
+          <div
+            ref={suggestRef}
+            className="absolute left-3 right-3 z-30 mt-1 max-h-72 overflow-y-auto rounded-xl border border-slate-300 bg-white py-1 text-slate-900 shadow-xl sm:left-4 sm:right-4"
+          >
+            {suggestLoading && (
+              <p className="px-3 py-3 text-sm text-slate-500">Searching…</p>
+            )}
+            {!suggestLoading && suggestions.length === 0 && (
+              <p className="px-3 py-3 text-sm text-slate-500">No products match “{scan.trim()}”.</p>
+            )}
+            {!suggestLoading &&
+              suggestions.map((row, index) => (
+                <button
+                  key={row.key}
+                  type="button"
+                  className={[
+                    'flex w-full flex-col items-start px-3 py-3 text-left text-sm active:bg-cyan-100',
+                    index === activeSuggest ? 'bg-cyan-50' : 'hover:bg-slate-50'
+                  ].join(' ')}
+                  onMouseEnter={() => setActiveSuggest(index)}
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    pickSuggestion(row)
+                  }}
+                >
+                  <span className="font-semibold">{row.label}</span>
+                  <span className="text-xs text-slate-500">{row.description}</span>
+                </button>
+              ))}
+          </div>
+        )}
         {message && <p className="mt-2 text-sm text-amber-700">{message}</p>}
       </form>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_0.8fr]">
         <Card>
-          <CardHeader>
+          <CardHeader className="pb-3">
             <CardTitle>Cart ({cart.length})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3" data-field="pos-cart">
             <FieldError id="pos-cart" error={fieldErrors['pos-cart']} />
             {cart.length === 0 && !fieldErrors['pos-cart'] && (
-              <p className="text-sm text-muted-foreground">Waiting for scan…</p>
+              <p className="text-sm text-muted-foreground">Type a product name or scan a barcode to add items.</p>
             )}
             {cart.map((item, index) => (
-              <div key={cartKey(item)} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 rounded-xl border px-3 py-2">
+              <div
+                key={cartKey(item)}
+                className="grid grid-cols-1 gap-3 rounded-xl border px-3 py-3 sm:grid-cols-[1fr_auto_auto] sm:items-center"
+              >
                 <div>
-                  <p className="font-medium">{item.name}</p>
+                  <p className="font-medium leading-snug">{item.name}</p>
                   <p className="text-xs text-muted-foreground">{item.sku} · ₹{item.actualSoldAmount.toFixed(2)}</p>
                 </div>
                 <FormField
@@ -292,19 +491,27 @@ const Pos = () => {
                   label="Qty"
                   error={fieldErrors[`pos-item-${index}-qty`]}
                   required
-                  className="items-center"
                 >
-                  <div className="flex items-center gap-1">
-                    <Button type="button" size="sm" variant="outline" onClick={() => {
-                      clearFieldError(`pos-item-${index}-qty`)
-                      clearFieldError('pos-cart')
-                      setQty(cartKey(item), item.quantity - 1)
-                    }}>-</Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      className="h-11 w-11 shrink-0"
+                      onClick={() => {
+                        clearFieldError(`pos-item-${index}-qty`)
+                        clearFieldError('pos-cart')
+                        setQty(cartKey(item), item.quantity - 1)
+                      }}
+                    >
+                      -
+                    </Button>
                     <Input
                       id={`pos-item-${index}-qty`}
-                      className="h-9 w-16 text-center"
+                      className="h-11 w-16 text-center text-base"
                       type="number"
                       min={1}
+                      inputMode="numeric"
                       value={item.quantity}
                       onChange={(e) => {
                         clearFieldError(`pos-item-${index}-qty`)
@@ -313,14 +520,22 @@ const Pos = () => {
                       }}
                       invalid={Boolean(fieldErrors[`pos-item-${index}-qty`])}
                     />
-                    <Button type="button" size="sm" variant="outline" onClick={() => {
-                      clearFieldError(`pos-item-${index}-qty`)
-                      clearFieldError('pos-cart')
-                      setQty(cartKey(item), item.quantity + 1)
-                    }}>+</Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      className="h-11 w-11 shrink-0"
+                      onClick={() => {
+                        clearFieldError(`pos-item-${index}-qty`)
+                        clearFieldError('pos-cart')
+                        setQty(cartKey(item), item.quantity + 1)
+                      }}
+                    >
+                      +
+                    </Button>
                   </div>
                 </FormField>
-                <p className="w-24 text-right font-semibold">₹{lineTotal(item).toFixed(2)}</p>
+                <p className="text-right text-lg font-semibold sm:w-24">₹{lineTotal(item).toFixed(2)}</p>
               </div>
             ))}
           </CardContent>
@@ -328,7 +543,7 @@ const Pos = () => {
 
         <div className="space-y-4">
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-3">
               <CardTitle>Checkout</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -348,33 +563,39 @@ const Pos = () => {
                 />
               </FormField>
               <FormField id="pos-payment" label="Payment" error={fieldErrors['pos-payment']} required>
-                <SearchableSelect
-                  id="pos-payment"
-                  value={paymentMode}
-                  onChange={(value) => {
-                    clearFieldError('pos-payment')
-                    setPaymentMode(value)
-                  }}
-                  options={[
-                    { value: 'cash', label: 'Cash' },
-                    { value: 'upi', label: 'UPI' },
-                    { value: 'card', label: 'Card' },
-                    { value: 'bank', label: 'Bank' }
-                  ]}
-                  invalid={Boolean(fieldErrors['pos-payment'])}
-                />
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {['cash', 'upi', 'card', 'bank'].map((mode) => (
+                    <Button
+                      key={mode}
+                      type="button"
+                      variant={paymentMode === mode ? 'default' : 'outline'}
+                      className="min-h-11 capitalize"
+                      onClick={() => {
+                        clearFieldError('pos-payment')
+                        setPaymentMode(mode)
+                      }}
+                    >
+                      {mode}
+                    </Button>
+                  ))}
+                </div>
+                {fieldErrors['pos-payment'] && (
+                  <p className="text-sm text-red-600" role="alert">{fieldErrors['pos-payment']}</p>
+                )}
               </FormField>
               <FormField
                 id="pos-received"
                 label="Amount received"
                 error={fieldErrors['pos-received']}
-                hint="Partial pay keeps the sale total and tracks outstanding. Excess is treated as change/advance."
+                hint="Partial pay keeps sale total and tracks outstanding."
               >
                 <Input
                   id="pos-received"
                   type="number"
                   min={0}
                   step="0.01"
+                  inputMode="decimal"
+                  className="h-12 text-base"
                   value={paidAmount}
                   onChange={(e) => {
                     clearFieldError('pos-received')
@@ -404,23 +625,31 @@ const Pos = () => {
                     <span>₹{changeAmount.toFixed(2)}</span>
                   </p>
                 )}
-                <p className="text-xs text-muted-foreground pt-1">Sale revenue (not cash)</p>
+                <p className="pt-1 text-xs text-muted-foreground">Sale revenue</p>
                 <p className="text-3xl font-semibold">₹{listTotal.toFixed(2)}</p>
               </div>
-              <Button type="button" className="h-12 w-full" disabled={busy} onClick={checkout}>
-                {busy ? 'Saving…' : 'Complete & print POS (F12)'}
-              </Button>
-              <Button type="button" variant="outline" className="w-full" disabled={!cart.length} onClick={() => {
-                setCart([])
-                clearFieldErrors()
-                focusScan()
-              }}>
-                Clear cart
-              </Button>
+              <div className="hidden gap-2 sm:grid">
+                <Button type="button" className="h-12 w-full" disabled={busy} onClick={checkout}>
+                  {busy ? 'Saving…' : 'Complete & print POS (F12)'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full"
+                  disabled={!cart.length}
+                  onClick={() => {
+                    setCart([])
+                    clearFieldErrors()
+                    focusScan()
+                  }}
+                >
+                  Clear cart
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="hidden sm:block">
             <CardHeader>
               <CardTitle>Today at this counter</CardTitle>
             </CardHeader>
@@ -429,15 +658,47 @@ const Pos = () => {
                 <div key={sale._id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
                   <div>
                     <p className="font-medium">{sale.invoiceNumber}</p>
-                    <p className="text-xs text-muted-foreground">₹{Number(sale.total || 0).toFixed(2)} · {sale.paymentMode}</p>
+                    <p className="text-xs text-muted-foreground">
+                      ₹{Number(sale.total || 0).toFixed(2)} · {sale.paymentMode}
+                    </p>
                   </div>
-                  <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => printPosReceipt(sale._id, { reprint: true })}>
-                    Reprint POS
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="h-auto p-0 text-xs"
+                    onClick={() => printPosReceipt(sale._id, { reprint: true })}
+                  >
+                    Reprint
                   </Button>
                 </div>
               ))}
             </CardContent>
           </Card>
+        </div>
+      </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 p-3 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] backdrop-blur sm:hidden safe-bottom">
+        <div className="mb-2 flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">{cart.length} item(s)</span>
+          <span className="text-lg font-semibold">₹{listTotal.toFixed(2)}</span>
+        </div>
+        <div className="grid grid-cols-[1fr_2fr] gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-12"
+            disabled={!cart.length}
+            onClick={() => {
+              setCart([])
+              clearFieldErrors()
+              focusScan()
+            }}
+          >
+            Clear
+          </Button>
+          <Button type="button" className="min-h-12" disabled={busy || !cart.length} onClick={checkout}>
+            {busy ? 'Saving…' : 'Complete sale'}
+          </Button>
         </div>
       </div>
     </div>

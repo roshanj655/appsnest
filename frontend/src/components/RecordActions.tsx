@@ -22,14 +22,14 @@ const RecordActions = ({
   return (
     <div className="flex flex-wrap justify-end gap-2">
       {!hideEdit && onEdit && (
-        <Button type="button" size="sm" variant="outline" onClick={onEdit}>
+        <Button type="button" size="sm" variant="outline" className="min-h-9 px-3" onClick={onEdit}>
           Edit
         </Button>
       )}
-      <Button type="button" size="sm" variant="secondary" onClick={onToggle}>
+      <Button type="button" size="sm" variant="secondary" className="min-h-9 px-3" onClick={onToggle}>
         {isActive ? disableLabel : enableLabel}
       </Button>
-      <Button type="button" size="sm" variant="destructive" onClick={onDelete}>
+      <Button type="button" size="sm" variant="destructive" className="min-h-9 px-3" onClick={onDelete}>
         Delete
       </Button>
     </div>

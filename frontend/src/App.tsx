@@ -33,7 +33,7 @@ const DashboardLayout = () => {
   return (
     <div className="erp-shell min-h-screen">
       <Navbar />
-      <main className="min-h-screen lg:pl-64">
+      <main className="min-h-screen overflow-x-hidden lg:pl-64">
         <Outlet />
       </main>
     </div>
