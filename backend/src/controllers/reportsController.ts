@@ -3,7 +3,7 @@ import { TenantRequest } from '../middleware/tenant';
 import { getProductModel } from '../models/tenant/Product';
 import { getSaleModel } from '../models/tenant/Sale';
 import { getPurchaseModel } from '../models/tenant/Purchase';
-import { getExpenseModel } from '../models/tenant/Expense';
+import { getExpenseModel, resolveExpenseKind, PERSONAL_EXPENSE_CATEGORIES } from '../models/tenant/Expense';
 import { getLoanModel } from '../models/tenant/Loan';
 import { getBusinessUnitModel } from '../models/tenant/BusinessUnit';
 import { mergeFilters, unitScope } from '../utils/businessUnit';
@@ -65,11 +65,29 @@ export const getDashboardStats = async (req: TenantRequest, res: Response) => {
         { $group: { _id: null, total: { $sum: '$total' } } }
       ]),
       Expense.aggregate([
-        { $match: scoped(req, { status: 'active', expenseDate: { $gte: startOfCurrentMonth, $lte: endOfCurrentMonth } }) },
+        {
+          $match: scoped(req, {
+            status: 'active',
+            expenseDate: { $gte: startOfCurrentMonth, $lte: endOfCurrentMonth },
+            $or: [
+              { kind: 'shop' },
+              { kind: { $exists: false }, category: { $nin: PERSONAL_EXPENSE_CATEGORIES } }
+            ]
+          })
+        },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
       Expense.aggregate([
-        { $match: scoped(req, { status: 'active', expenseDate: { $gte: startOfLastMonth, $lte: endOfLastMonth } }) },
+        {
+          $match: scoped(req, {
+            status: 'active',
+            expenseDate: { $gte: startOfLastMonth, $lte: endOfLastMonth },
+            $or: [
+              { kind: 'shop' },
+              { kind: { $exists: false }, category: { $nin: PERSONAL_EXPENSE_CATEGORIES } }
+            ]
+          })
+        },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
       Sale.aggregate([
@@ -81,7 +99,16 @@ export const getDashboardStats = async (req: TenantRequest, res: Response) => {
         { $group: { _id: null, total: { $sum: '$total' } } }
       ]),
       Expense.aggregate([
-        { $match: scoped(req, { status: 'active', expenseDate: { $gte: todayStart, $lte: todayEnd } }) },
+        {
+          $match: scoped(req, {
+            status: 'active',
+            expenseDate: { $gte: todayStart, $lte: todayEnd },
+            $or: [
+              { kind: 'shop' },
+              { kind: { $exists: false }, category: { $nin: PERSONAL_EXPENSE_CATEGORIES } }
+            ]
+          })
+        },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
       Sale.find(scoped(req, { status: 'completed' })).populate('customerId').sort({ createdAt: -1 }).limit(5),
@@ -292,20 +319,59 @@ export const getProfitReport = async (req: TenantRequest, res: Response) => {
 
     const totalSales = sales.reduce((sum: number, s: any) => sum + s.total, 0);
     const totalPurchases = purchases.reduce((sum: number, p: any) => sum + p.total, 0);
-    const totalMiscExpenses = expenses.reduce((sum: number, e: any) => sum + e.amount, 0);
-    const totalLoanInterest = loans.reduce((sum: number, loan: any) => {
+    const shopExpenses = expenses.filter(
+      (e: any) => resolveExpenseKind(e.category, e.kind) === 'shop'
+    );
+    const personalExpenses = expenses.filter(
+      (e: any) => resolveExpenseKind(e.category, e.kind) === 'personal'
+    );
+    const totalShopExpenses = shopExpenses.reduce((sum: number, e: any) => sum + e.amount, 0);
+    const totalPersonalDraws = personalExpenses.reduce((sum: number, e: any) => sum + e.amount, 0);
+    const totalMiscExpenses = totalShopExpenses;
+    let totalLoanInterest = 0;
+    let totalPrincipalPaidInRange = 0;
+    const loanRows = loans.map((loan: any) => {
       const payments = (loan.repayments || []).filter((row: any) => row.status !== 'reversed');
-      return (
-        sum +
-        payments.reduce((inner: number, row: any) => {
-          if (dateRange) {
-            const paidAt = new Date(row.paidAt);
-            if (paidAt < dateRange.$gte || paidAt > dateRange.$lte) return inner;
-          }
-          return inner + Number(row.interestAmount || 0);
-        }, 0)
-      );
-    }, 0);
+      let interestInRange = 0;
+      let principalInRange = 0;
+      for (const row of payments) {
+        if (dateRange) {
+          const paidAt = new Date(row.paidAt);
+          if (paidAt < dateRange.$gte || paidAt > dateRange.$lte) continue;
+        }
+        interestInRange += Number(row.interestAmount || 0);
+        principalInRange += Number(row.principalAmount || 0);
+      }
+      totalLoanInterest += interestInRange;
+      totalPrincipalPaidInRange += principalInRange;
+      return {
+        _id: loan._id,
+        lenderName: loan.lenderName,
+        status: loan.status,
+        principalAmount: money2(Number(loan.principalAmount || 0)),
+        outstandingPrincipal: money2(Number(loan.outstandingPrincipal || 0)),
+        outstandingInterest: money2(Number(loan.outstandingInterest || 0)),
+        principalPaid: money2(Number(loan.principalPaid || 0)),
+        interestPaid: money2(Number(loan.interestPaid || 0)),
+        interestPaidInRange: money2(interestInRange),
+        principalPaidInRange: money2(principalInRange)
+      };
+    });
+    const activeLoans = loanRows.filter((row) => row.status === 'active');
+    const loanSummary = {
+      outstandingPrincipal: money2(
+        activeLoans.reduce((sum, row) => sum + Number(row.outstandingPrincipal || 0), 0)
+      ),
+      outstandingInterest: money2(
+        activeLoans.reduce((sum, row) => sum + Number(row.outstandingInterest || 0), 0)
+      ),
+      principalPaid: money2(loanRows.reduce((sum, row) => sum + Number(row.principalPaid || 0), 0)),
+      interestPaid: money2(loanRows.reduce((sum, row) => sum + Number(row.interestPaid || 0), 0)),
+      principalPaidInRange: money2(totalPrincipalPaidInRange),
+      interestPaidInRange: money2(totalLoanInterest),
+      loans: loanRows
+    };
+    totalLoanInterest = money2(totalLoanInterest);
 
     const itemProfits: any[] = [];
     let totalCogs = 0;
@@ -353,7 +419,7 @@ export const getProfitReport = async (req: TenantRequest, res: Response) => {
     }
 
     const grossProfit = totalRevenue - totalCogs;
-    const netProfit = money2(grossProfit - totalMiscExpenses - totalLoanInterest);
+    const netProfit = money2(grossProfit - totalShopExpenses - totalLoanInterest);
 
     res.json({
       totalSales,
@@ -361,17 +427,80 @@ export const getProfitReport = async (req: TenantRequest, res: Response) => {
       totalCogs,
       totalPurchases,
       totalMiscExpenses,
-      totalLoanInterest: money2(totalLoanInterest),
-      totalExpenses: money2(totalMiscExpenses + totalLoanInterest),
+      totalShopExpenses: money2(totalShopExpenses),
+      totalPersonalDraws: money2(totalPersonalDraws),
+      totalLoanInterest,
+      totalExpenses: money2(totalShopExpenses + totalLoanInterest),
       grossProfit,
       netProfit,
       profitMargin: totalRevenue > 0 ? money2((grossProfit / totalRevenue) * 100) : 0,
-      note: 'Loan principal is excluded from profit. Only loan interest paid affects net profit.',
+      loanSummary,
+      personalExpenses: personalExpenses.map((e: any) => ({
+        _id: e._id,
+        title: e.title,
+        category: e.category,
+        amount: e.amount,
+        expenseDate: e.expenseDate,
+        notes: e.notes
+      })),
+      note:
+        'Shop expenses and loan interest reduce net profit. Loan principal and personal/home draws are tracked separately and do not reduce shop net profit.',
       itemProfits
     });
   } catch (error) {
     console.error('Error fetching profit report:', error);
     res.status(500).json({ message: 'Error fetching profit report' });
+  }
+};
+
+export const getPersonalExpenseReport = async (req: TenantRequest, res: Response) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const Expense = getExpenseModel(req.tenantDB!);
+
+    const dateRange = startDate && endDate
+      ? {
+          $gte: new Date(startDate as string),
+          $lte: new Date(endDate as string)
+        }
+      : undefined;
+
+    const expenses = await Expense.find(
+      scoped(req, {
+        status: 'active',
+        ...(dateRange ? { expenseDate: dateRange } : {})
+      })
+    ).sort({ expenseDate: -1 });
+
+    const personal = expenses.filter(
+      (e: any) => resolveExpenseKind(e.category, e.kind) === 'personal'
+    );
+    const byCategory: Record<string, number> = {};
+    for (const row of personal) {
+      const key = String(row.category || 'personal');
+      byCategory[key] = money2((byCategory[key] || 0) + Number(row.amount || 0));
+    }
+
+    res.json({
+      total: money2(personal.reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0)),
+      count: personal.length,
+      byCategory: Object.entries(byCategory).map(([category, amount]) => ({ category, amount })),
+      categories: PERSONAL_EXPENSE_CATEGORIES,
+      items: personal.map((e: any) => ({
+        _id: e._id,
+        title: e.title,
+        category: e.category,
+        kind: resolveExpenseKind(e.category, e.kind),
+        amount: e.amount,
+        expenseDate: e.expenseDate,
+        notes: e.notes,
+        businessUnitId: e.businessUnitId
+      })),
+      note: 'These are shop cash used for home/personal needs. They are not shop operating expenses and do not reduce net shop profit.'
+    });
+  } catch (error) {
+    console.error('Error fetching personal expense report:', error);
+    res.status(500).json({ message: 'Error fetching personal expense report' });
   }
 };
 

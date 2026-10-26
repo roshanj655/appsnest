@@ -72,7 +72,12 @@ const Reports = () => {
     {
       title: 'Profit Report',
       path: '/reports/profit',
-      description: 'Revenue, expenses, and profit margins'
+      description: 'Revenue, shop expenses, loan pending, and net profit'
+    },
+    {
+      title: 'Personal / home draws',
+      path: '/reports/personal-expenses',
+      description: 'Shop cash used for home or personal needs (not shop profit cost)'
     },
     {
       title: 'Margin & collections',

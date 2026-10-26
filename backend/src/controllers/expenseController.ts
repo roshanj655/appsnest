@@ -1,6 +1,12 @@
 import { Response } from 'express';
 import { TenantRequest } from '../middleware/tenant';
-import { EXPENSE_CATEGORIES, getExpenseModel, type ExpenseCategory } from '../models/tenant/Expense';
+import {
+  EXPENSE_CATEGORIES,
+  getExpenseModel,
+  resolveExpenseKind,
+  type ExpenseCategory,
+  type ExpenseKind
+} from '../models/tenant/Expense';
 import { logAuditEvent } from '../utils/auditLogger';
 
 const parseId = (id: string | string[] | undefined) => (Array.isArray(id) ? id[0] : id);
@@ -12,15 +18,34 @@ export const getExpenses = async (req: TenantRequest, res: Response) => {
   try {
     const Expense = getExpenseModel(req.tenantDB!);
     const { page, limit, skip, search } = parsePagination(req.query);
-    const filter = mergeFilters(textSearch(search, ['title', 'category', 'notes']), unitScope(req));
+    const kind = typeof req.query.kind === 'string' ? req.query.kind : undefined;
+    const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+    const filter = mergeFilters(
+      {
+        ...textSearch(search, ['title', 'category', 'notes']),
+        ...(kind === 'shop' || kind === 'personal' ? { kind } : {}),
+        ...(category ? { category } : {})
+      },
+      unitScope(req)
+    );
     const [items, total] = await Promise.all([
       Expense.find(filter).sort({ expenseDate: -1, createdAt: -1 }).skip(skip).limit(limit),
       Expense.countDocuments(filter)
     ]);
-    const amountTotal = items
-      .filter((item) => item.status === 'active')
+    const active = items.filter((item) => item.status === 'active');
+    const amountTotal = active.reduce((sum, item) => sum + item.amount, 0);
+    const shopTotal = active
+      .filter((item) => resolveExpenseKind(item.category, item.kind) === 'shop')
       .reduce((sum, item) => sum + item.amount, 0);
-    res.json({ ...paginatedResult(items, total, page, limit), amountTotal });
+    const personalTotal = active
+      .filter((item) => resolveExpenseKind(item.category, item.kind) === 'personal')
+      .reduce((sum, item) => sum + item.amount, 0);
+    res.json({
+      ...paginatedResult(items, total, page, limit),
+      amountTotal,
+      shopTotal,
+      personalTotal
+    });
   } catch (error) {
     console.error('Error fetching expenses:', error);
     res.status(500).json({ message: 'Error fetching expenses' });
@@ -32,6 +57,7 @@ export const createExpense = async (req: TenantRequest, res: Response) => {
     const title = String(req.body?.title || '').trim();
     const amount = Number(req.body?.amount);
     const category = String(req.body?.category || 'other').trim() as ExpenseCategory;
+    const kind = resolveExpenseKind(category, req.body?.kind) as ExpenseKind;
     const expenseDate = req.body?.expenseDate ? new Date(req.body.expenseDate) : new Date();
     const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : undefined;
 
@@ -53,6 +79,7 @@ export const createExpense = async (req: TenantRequest, res: Response) => {
       title,
       amount,
       category,
+      kind,
       expenseDate,
       notes,
       businessUnitId: resolveBusinessUnitId(req, req.body),
@@ -66,7 +93,7 @@ export const createExpense = async (req: TenantRequest, res: Response) => {
         action: 'CREATE',
         entity: 'Expense',
         entityId: expense._id.toString(),
-        changes: { title, amount, category, expenseDate },
+        changes: { title, amount, category, kind, expenseDate },
         req
       });
     }
@@ -104,6 +131,13 @@ export const updateExpense = async (req: TenantRequest, res: Response) => {
         return res.status(400).json({ message: 'A valid expense category is required.' });
       }
       updates.category = category;
+    }
+    if (req.body?.kind !== undefined || req.body?.category !== undefined) {
+      const nextCategory = (updates.category as string | undefined) || undefined;
+      updates.kind = resolveExpenseKind(
+        nextCategory || String(req.body?.category || ''),
+        req.body?.kind
+      );
     }
     if (req.body?.expenseDate !== undefined) {
       const expenseDate = new Date(req.body.expenseDate);

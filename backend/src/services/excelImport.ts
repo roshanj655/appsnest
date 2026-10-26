@@ -4,7 +4,7 @@ import { getProductModel } from '../models/tenant/Product';
 import { getCategoryModel } from '../models/tenant/Category';
 import { getCustomerModel } from '../models/tenant/Customer';
 import { getSupplierModel } from '../models/tenant/Supplier';
-import { getExpenseModel, EXPENSE_CATEGORIES, type ExpenseCategory } from '../models/tenant/Expense';
+import { getExpenseModel, EXPENSE_CATEGORIES, resolveExpenseKind, type ExpenseCategory } from '../models/tenant/Expense';
 import { getBusinessUnitModel } from '../models/tenant/BusinessUnit';
 import { recordOpeningIfNeeded } from './inventoryCosting';
 import { resolveBusinessUnitId } from '../utils/businessUnit';
@@ -78,6 +78,7 @@ const expenseColumns: ExcelColumn[] = [
   { header: 'Title', key: 'title', width: 24 },
   { header: 'Amount', key: 'amount', width: 12 },
   { header: 'Category', key: 'category', width: 16 },
+  { header: 'Kind', key: 'kind', width: 12 },
   { header: 'Expense Date', key: 'expenseDate', width: 16 },
   { header: 'Notes', key: 'notes', width: 28 }
 ];
@@ -193,14 +194,24 @@ export const buildImportSample = (kind: ImportKind) => {
           title: 'Shop rent',
           amount: 15000,
           category: 'rent',
+          kind: 'shop',
           expenseDate: new Date().toISOString().slice(0, 10),
           notes: 'April'
+        },
+        {
+          title: 'Home groceries from shop cash',
+          amount: 2000,
+          category: 'home',
+          kind: 'personal',
+          expenseDate: new Date().toISOString().slice(0, 10),
+          notes: 'Owner draw'
         }
       ],
       [
         ...commonInstructions,
         'Required: Title, Amount, Category.',
         `Category must be one of: ${EXPENSE_CATEGORIES.join(', ')}.`,
+        'Kind is optional: shop or personal. personal/home/family categories default to personal.',
         'Expense Date format: YYYY-MM-DD. Blank uses today.'
       ]
     );
@@ -451,16 +462,19 @@ const importExpenses = async (req: TenantRequest, rows: Array<{ rowNumber: numbe
       continue;
     }
     try {
+      const kindText = pick(data, 'kind', 'type').toLowerCase();
+      const kind = resolveExpenseKind(category, kindText || undefined);
       const expense = await Expense.create({
         title,
         amount,
         category,
+        kind,
         expenseDate,
         notes: pick(data, 'notes') || undefined,
         businessUnitId: resolveBusinessUnitId(req),
         status: 'active'
       });
-      await auditCreate(req, 'Expense', expense._id.toString(), { title, amount, source: 'excel-import' });
+      await auditCreate(req, 'Expense', expense._id.toString(), { title, amount, kind, source: 'excel-import' });
       created += 1;
     } catch (error: any) {
       errors.push({ row: rowNumber, message: error?.message || 'Unable to create expense.' });

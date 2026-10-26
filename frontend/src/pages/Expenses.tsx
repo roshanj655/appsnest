@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import axios from 'axios'
 import PageHeader from '../components/PageHeader'
 import ConfirmDialog from '@/components/ConfirmDialog'
@@ -19,6 +20,7 @@ type Expense = {
   title: string
   amount: number
   category: string
+  kind?: 'shop' | 'personal'
   expenseDate: string
   notes?: string
   businessUnitId?: string | { _id: string }
@@ -28,21 +30,26 @@ type Expense = {
 type ConfirmKind = 'disable' | 'enable' | 'delete'
 
 const categories = [
-  { value: 'personal', label: 'Personal' },
-  { value: 'rent', label: 'Rent' },
+  { value: 'personal', label: 'Personal (owner draw)' },
+  { value: 'home', label: 'Home' },
+  { value: 'family', label: 'Family' },
+  { value: 'rent', label: 'Shop rent' },
   { value: 'utilities', label: 'Utilities' },
   { value: 'transport', label: 'Transport' },
   { value: 'salary', label: 'Salary' },
   { value: 'maintenance', label: 'Maintenance' },
-  { value: 'other', label: 'Other' }
+  { value: 'other', label: 'Other shop cost' }
 ]
+
+const personalCategories = new Set(['personal', 'home', 'family'])
 
 const today = () => new Date().toISOString().slice(0, 10)
 
 const emptyForm = {
   title: '',
   amount: 0,
-  category: 'personal',
+  category: 'other',
+  kind: 'shop' as 'shop' | 'personal',
   expenseDate: today(),
   notes: '',
   businessUnitId: ''
@@ -51,6 +58,8 @@ const emptyForm = {
 const Expenses = () => {
   const [items, setItems] = useState<Expense[]>([])
   const [total, setTotal] = useState(0)
+  const [shopTotal, setShopTotal] = useState(0)
+  const [personalTotal, setPersonalTotal] = useState(0)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState(emptyForm)
@@ -66,6 +75,8 @@ const Expenses = () => {
       const res = await axios.get('/api/expenses', { ...authHeaders(), ...listParams })
       setItems(listItems(res.data))
       setTotal(Number(res.data?.amountTotal) || 0)
+      setShopTotal(Number(res.data?.shopTotal) || 0)
+      setPersonalTotal(Number(res.data?.personalTotal) || 0)
     } catch (err: any) {
       setErrorMessage(err.response?.data?.message || 'Unable to load expenses.')
     }
@@ -92,10 +103,14 @@ const Expenses = () => {
 
   const openEdit = (expense: Expense) => {
     setEditingId(expense._id)
+    const kind =
+      expense.kind ||
+      (personalCategories.has(expense.category) ? 'personal' : 'shop')
     setFormData({
       title: expense.title,
       amount: expense.amount,
       category: expense.category,
+      kind,
       expenseDate: expense.expenseDate ? expense.expenseDate.slice(0, 10) : today(),
       notes: expense.notes || '',
       businessUnitId: typeof expense.businessUnitId === 'object' ? expense.businessUnitId?._id || '' : expense.businessUnitId || ''
@@ -159,20 +174,39 @@ const Expenses = () => {
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <PageHeader
         title="Misc Expenses"
-        description="Record personal and other non-purchase costs so profit reports stay accurate."
+        description="Shop costs reduce profit. Personal/home payments use shop cash but are tracked separately."
         actions={
-          <Button type="button" onClick={() => (showForm ? closeForm() : openCreate())}>
-            {showForm ? 'Close Form' : 'Add Expense'}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link to="/reports/personal-expenses">Personal / home report</Link>
+            </Button>
+            <Button type="button" onClick={() => (showForm ? closeForm() : openCreate())}>
+              {showForm ? 'Close Form' : 'Add Expense'}
+            </Button>
+          </div>
         }
       />
 
-      <Card>
-        <CardContent className="p-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Active expenses total</p>
-          <p className="mt-1 text-2xl font-semibold">₹{total.toFixed(2)}</p>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Card>
+          <CardContent className="p-5">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">All active</p>
+            <p className="mt-1 text-2xl font-semibold">₹{total.toFixed(2)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-5">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Shop expenses</p>
+            <p className="mt-1 text-2xl font-semibold">₹{shopTotal.toFixed(2)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-5">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Personal / home draws</p>
+            <p className="mt-1 text-2xl font-semibold">₹{personalTotal.toFixed(2)}</p>
+          </CardContent>
+        </Card>
+      </div>
 
       {errorMessage && !showForm && (
         <div className="rounded-xl border border-red-600/30 bg-red-50 px-4 py-3 text-sm text-red-800">{errorMessage}</div>
@@ -182,7 +216,9 @@ const Expenses = () => {
         <Card>
           <CardHeader>
             <CardTitle>{editingId ? 'Edit Expense' : 'Add Expense'}</CardTitle>
-            <CardDescription>Use Personal for owner drawings and other categories for operating costs.</CardDescription>
+            <CardDescription>
+              Choose Personal / Home when the shop pays for home or personal needs. Choose Shop for rent, salary, and other business costs.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {errorMessage && (
@@ -226,15 +262,52 @@ const Expenses = () => {
                     invalid={Boolean(fieldErrors['exp-amount'])}
                   />
                 </FormField>
+                <FormField id="exp-kind" label="Payment type" error={fieldErrors['exp-kind']} required>
+                  <SearchableSelect
+                    id="exp-kind"
+                    value={formData.kind}
+                    onChange={(kind) => {
+                      clearFieldError('exp-kind')
+                      const nextKind = kind === 'personal' ? 'personal' : 'shop'
+                      setFormData({
+                        ...formData,
+                        kind: nextKind,
+                        category:
+                          nextKind === 'personal'
+                            ? personalCategories.has(formData.category)
+                              ? formData.category
+                              : 'personal'
+                            : personalCategories.has(formData.category)
+                              ? 'other'
+                              : formData.category
+                      })
+                    }}
+                    options={[
+                      { value: 'shop', label: 'Shop expense (affects profit)' },
+                      { value: 'personal', label: 'Personal / home (owner draw)' }
+                    ]}
+                    invalid={Boolean(fieldErrors['exp-kind'])}
+                  />
+                </FormField>
                 <FormField id="exp-category" label="Category" error={fieldErrors['exp-category']}>
                   <SearchableSelect
                     id="exp-category"
                     value={formData.category}
                     onChange={(category) => {
                       clearFieldError('exp-category')
-                      setFormData({ ...formData, category })
+                      setFormData({
+                        ...formData,
+                        category,
+                        kind: personalCategories.has(category) ? 'personal' : 'shop'
+                      })
                     }}
-                    options={categories.map((category) => ({ value: category.value, label: category.label }))}
+                    options={categories
+                      .filter((category) =>
+                        formData.kind === 'personal'
+                          ? personalCategories.has(category.value)
+                          : !personalCategories.has(category.value)
+                      )
+                      .map((category) => ({ value: category.value, label: category.label }))}
                     invalid={Boolean(fieldErrors['exp-category'])}
                   />
                 </FormField>
@@ -287,6 +360,7 @@ const Expenses = () => {
               <TableRow>
                 <TableHead>Date</TableHead>
                 <TableHead>Title</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Status</TableHead>
@@ -296,7 +370,7 @@ const Expenses = () => {
             <TableBody>
               {items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                     No expenses yet.
                   </TableCell>
                 </TableRow>
@@ -305,6 +379,9 @@ const Expenses = () => {
                   <TableRow key={row._id}>
                     <TableCell>{row.expenseDate ? new Date(row.expenseDate).toLocaleDateString() : '—'}</TableCell>
                     <TableCell className="font-medium">{row.title}</TableCell>
+                    <TableCell className="capitalize">
+                      {row.kind || (personalCategories.has(row.category) ? 'personal' : 'shop')}
+                    </TableCell>
                     <TableCell className="capitalize">{row.category}</TableCell>
                     <TableCell>₹{Number(row.amount).toFixed(2)}</TableCell>
                     <TableCell className="capitalize">{row.status}</TableCell>

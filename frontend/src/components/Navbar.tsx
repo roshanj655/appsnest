@@ -123,6 +123,7 @@ const Navbar = () => {
             { to: '/reports/inventory', label: 'Inventory Report', icon: Boxes },
             { to: '/reports/low-stock', label: 'Low Stock', icon: Package },
             { to: '/reports/profit', label: 'Profit Report', icon: TrendingUp },
+            { to: '/reports/personal-expenses', label: 'Personal / Home', icon: Wallet },
             { to: '/reports/margins', label: 'Margin & Collections', icon: Percent }
           ]
         },

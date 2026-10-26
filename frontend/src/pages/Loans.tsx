@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import PageHeader from '../components/PageHeader'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import RecordActions from '@/components/RecordActions'
+import ReportChart from '@/components/ReportChart'
 import { FormField } from '@/components/FormField'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -201,7 +202,7 @@ const Loans = () => {
     setRepayError('')
     clearRepayFieldErrors()
     setRepayForm({
-      amount: Number(loan.outstandingPrincipal || 0) + Number(loan.outstandingInterest || 0),
+      amount: 0,
       type: 'mixed',
       method: 'cash',
       reference: '',
@@ -215,12 +216,28 @@ const Loans = () => {
     if (!repayLoan) return
     setRepayError('')
     clearRepayFieldErrors()
+    const outstanding =
+      Number(repayLoan.outstandingPrincipal || 0) + Number(repayLoan.outstandingInterest || 0)
     const errors: Record<string, string> = {}
-    if (repayForm.amount <= 0) errors['repay-amount'] = 'Repayment amount must be greater than zero.'
+    if (repayForm.amount <= 0) errors['repay-amount'] = 'Enter how much you paid (for example 1000).'
+    else if (repayForm.amount > outstanding + 0.009) {
+      errors['repay-amount'] = `Cannot pay more than outstanding ₹${outstanding.toFixed(2)}.`
+    }
     if (showRepayFieldErrors(errors)) return
     setRepayBusy(true)
     try {
-      await axios.post(`/api/loans/${repayLoan._id}/repayments`, repayForm, authHeaders())
+      await axios.post(
+        `/api/loans/${repayLoan._id}/repayments`,
+        {
+          amount: repayForm.amount,
+          type: repayForm.type,
+          method: repayForm.method,
+          reference: repayForm.reference || undefined,
+          notes: repayForm.notes || undefined,
+          paidAt: repayForm.paidAt
+        },
+        authHeaders()
+      )
       closeRepay()
       fetchLoans()
     } catch (err: any) {
@@ -229,6 +246,54 @@ const Loans = () => {
       setRepayBusy(false)
     }
   }
+
+  const historyRows = useMemo(() => {
+    const rows: Array<{
+      key: string
+      date: string
+      lender: string
+      event: string
+      principal: number
+      interest: number
+      total: number
+      method: string
+      status: string
+      balanceAfter?: string
+    }> = []
+
+    for (const loan of loans) {
+      rows.push({
+        key: `${loan._id}-taken`,
+        date: loan.startDate ? String(loan.startDate).slice(0, 10) : '—',
+        lender: loan.lenderName,
+        event: 'Loan taken',
+        principal: Number(loan.principalAmount || 0),
+        interest: Number(loan.expectedInterest || 0),
+        total: Number(loan.principalAmount || 0),
+        method: '—',
+        status: loan.status,
+        balanceAfter: `Pending ₹${(
+          Number(loan.outstandingPrincipal || 0) + Number(loan.outstandingInterest || 0)
+        ).toFixed(2)}`
+      })
+
+      for (const payment of loan.repayments || []) {
+        rows.push({
+          key: `${loan._id}-${payment._id}`,
+          date: payment.paidAt ? String(payment.paidAt).slice(0, 10) : '—',
+          lender: loan.lenderName,
+          event: payment.status === 'reversed' ? 'Payment reversed' : 'Payment paid',
+          principal: Number(payment.principalAmount || 0),
+          interest: Number(payment.interestAmount || 0),
+          total: Number(payment.amount || 0),
+          method: payment.method || '—',
+          status: payment.status || 'active'
+        })
+      }
+    }
+
+    return rows.sort((a, b) => String(b.date).localeCompare(String(a.date)))
+  }, [loans])
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -243,6 +308,7 @@ const Loans = () => {
       />
 
       {summary && (
+        <>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Card>
             <CardContent className="p-5">
@@ -269,6 +335,37 @@ const Loans = () => {
             </CardContent>
           </Card>
         </div>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <ReportChart
+            title="Loan pending"
+            description="How much principal and interest is still due."
+            type="pie"
+            xKey="name"
+            data={[
+              { name: 'Pending principal', value: Number(summary.outstandingPrincipal || 0), color: '#f43f5e' },
+              { name: 'Pending interest', value: Number(summary.outstandingInterest || 0), color: '#f59e0b' },
+              { name: 'Principal paid', value: Number(summary.principalPaid || 0), color: '#10b981' },
+              { name: 'Interest paid', value: Number(summary.interestPaid || 0), color: '#64748b' }
+            ]}
+            series={[{ key: 'value', name: 'Amount', color: '#10b981' }]}
+          />
+          <ReportChart
+            title="Pending by lender"
+            description="Active loans still owed."
+            type="bar"
+            layout="vertical"
+            xKey="name"
+            data={loans
+              .filter((loan) => loan.status === 'active')
+              .map((loan) => ({
+                name: String(loan.lenderName || 'Loan').slice(0, 18),
+                value:
+                  Number(loan.outstandingPrincipal || 0) + Number(loan.outstandingInterest || 0)
+              }))}
+            series={[{ key: 'value', name: 'Pending', color: '#22d3ee' }]}
+          />
+        </div>
+        </>
       )}
 
       {errorMessage && !showForm && (
@@ -490,6 +587,58 @@ const Loans = () => {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Loan history</CardTitle>
+          <CardDescription>
+            Table of every loan taken and every payment made. Paying ₹1000 on a ₹10,000 loan leaves ₹9,000 pending.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Lender</TableHead>
+                <TableHead>Event</TableHead>
+                <TableHead>Principal</TableHead>
+                <TableHead>Interest</TableHead>
+                <TableHead>Total</TableHead>
+                <TableHead>Method</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {historyRows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                    No loan history yet.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                historyRows.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell>{row.date}</TableCell>
+                    <TableCell className="font-medium">{row.lender}</TableCell>
+                    <TableCell>
+                      <div>{row.event}</div>
+                      {row.balanceAfter && (
+                        <div className="text-xs text-muted-foreground">{row.balanceAfter}</div>
+                      )}
+                    </TableCell>
+                    <TableCell>₹{row.principal.toFixed(2)}</TableCell>
+                    <TableCell>₹{row.interest.toFixed(2)}</TableCell>
+                    <TableCell className="font-medium">₹{row.total.toFixed(2)}</TableCell>
+                    <TableCell className="capitalize">{row.method}</TableCell>
+                    <TableCell className="capitalize">{row.status}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
       {repayLoan && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <Card className="w-full max-w-md">
@@ -501,17 +650,22 @@ const Loans = () => {
                 <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{repayError}</div>
               )}
               <p className="mb-3 text-sm text-muted-foreground">
-                Outstanding principal ₹{Number(repayLoan.outstandingPrincipal || 0).toFixed(2)} · interest ₹{Number(repayLoan.outstandingInterest || 0).toFixed(2)}.
-                Principal repayment does not change sales profit.
+                Outstanding: principal ₹{Number(repayLoan.outstandingPrincipal || 0).toFixed(2)} · interest ₹
+                {Number(repayLoan.outstandingInterest || 0).toFixed(2)} · total ₹
+                {(
+                  Number(repayLoan.outstandingPrincipal || 0) + Number(repayLoan.outstandingInterest || 0)
+                ).toFixed(2)}
+                . Enter only the amount you paid now (example: 1000). Do not enter the full loan unless you are clearing it.
               </p>
               <form onSubmit={submitRepayment} noValidate className="space-y-3">
-                <FormField id="repay-amount" label="Amount" error={repayFieldErrors['repay-amount']} required>
+                <FormField id="repay-amount" label="Amount paid now" error={repayFieldErrors['repay-amount']} required>
                   <Input
                     id="repay-amount"
                     type="number"
                     min={0}
                     step="0.01"
-                    value={repayForm.amount}
+                    placeholder="e.g. 1000"
+                    value={repayForm.amount || ''}
                     onChange={(e) => {
                       clearRepayFieldError('repay-amount')
                       setRepayForm({ ...repayForm, amount: e.target.value === '' ? 0 : Number(e.target.value) })

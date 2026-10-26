@@ -171,7 +171,18 @@ export const purchaseUpdateSchema = purchaseSchema.partial().extend({
 export const expenseSchema = z.object({
   title: z.string().trim().min(1),
   amount: money,
-  category: z.enum(['personal', 'rent', 'utilities', 'transport', 'salary', 'maintenance', 'other']),
+  category: z.enum([
+    'personal',
+    'home',
+    'family',
+    'rent',
+    'utilities',
+    'transport',
+    'salary',
+    'maintenance',
+    'other'
+  ]),
+  kind: z.enum(['shop', 'personal']).optional(),
   businessUnitId: optionalString,
   expenseDate: z.coerce.date().optional(),
   notes: optionalString,
@@ -197,11 +208,16 @@ export const loanSchema = z.object({
 
 export const loanUpdateSchema = loanSchema.partial();
 
+const optionalMoney = z.preprocess(
+  (value) => (value === '' || value === null || value === undefined ? undefined : value),
+  z.coerce.number().min(0).optional()
+);
+
 export const loanRepaymentSchema = z.object({
   amount: money,
   type: z.enum(['principal', 'interest', 'mixed']).optional(),
-  principalAmount: money.optional(),
-  interestAmount: money.optional(),
+  principalAmount: optionalMoney,
+  interestAmount: optionalMoney,
   method: z.string().trim().optional(),
   reference: optionalString,
   notes: optionalString,

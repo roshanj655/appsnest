@@ -6,6 +6,7 @@ import {
   getInventoryReport,
   getLowStockReport,
   getProfitReport,
+  getPersonalExpenseReport,
   getByUnitReport,
   getPurchaseHistoryReport
 } from '../controllers/reportsController';
@@ -21,6 +22,7 @@ router.get('/purchases', protect, authorize('reports.purchases.read'), tenantMid
 router.get('/inventory', protect, authorize('reports.inventory.read'), tenantMiddleware, getInventoryReport);
 router.get('/low-stock', protect, authorize('reports.lowStock.read'), tenantMiddleware, getLowStockReport);
 router.get('/profit', protect, authorize('reports.profit.read'), tenantMiddleware, getProfitReport);
+router.get('/personal-expenses', protect, authorize('reports.profit.read', 'expenses.read'), tenantMiddleware, getPersonalExpenseReport);
 router.get('/margins', protect, authorize('reports.margins.read'), tenantMiddleware, getMarginReports);
 router.get('/purchase-history', protect, authorize('reports.purchases.read'), tenantMiddleware, getPurchaseHistoryReport);
 router.get('/by-unit', protect, authorize('reports.dashboard.read'), tenantMiddleware, getByUnitReport);

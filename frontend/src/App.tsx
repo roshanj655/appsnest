@@ -19,6 +19,7 @@ import PurchaseHistory from './pages/PurchaseHistory'
 import InventoryReport from './pages/InventoryReport'
 import LowStockReport from './pages/LowStockReport'
 import ProfitReport from './pages/ProfitReport'
+import PersonalExpensesReport from './pages/PersonalExpensesReport'
 import MarginReport from './pages/MarginReport'
 import AuditLogs from './pages/AuditLogs'
 import Businesses from './pages/Businesses'
@@ -70,6 +71,7 @@ function App() {
           <Route path="/reports/inventory" element={<InventoryReport />} />
           <Route path="/reports/low-stock" element={<LowStockReport />} />
           <Route path="/reports/profit" element={<ProfitReport />} />
+          <Route path="/reports/personal-expenses" element={<PersonalExpensesReport />} />
           <Route path="/reports/margins" element={<MarginReport />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/audit-logs" element={<AuditLogs />} />

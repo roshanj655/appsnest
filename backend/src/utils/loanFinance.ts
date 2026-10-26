@@ -33,11 +33,14 @@ export const recomputeLoanBalances = (loan: {
   };
 };
 
+const hasExplicitAmount = (value: unknown) =>
+  value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value));
+
 export const splitRepayment = (input: {
   amount: number;
   type?: string;
-  principalAmount?: number;
-  interestAmount?: number;
+  principalAmount?: number | string | null;
+  interestAmount?: number | string | null;
   outstandingPrincipal: number;
   outstandingInterest: number;
 }) => {
@@ -46,12 +49,29 @@ export const splitRepayment = (input: {
     throw Object.assign(new Error('Repayment amount must be greater than zero.'), { status: 400 });
   }
 
+  const outstandingPrincipal = money2(Math.max(0, Number(input.outstandingPrincipal || 0)));
+  const outstandingInterest = money2(Math.max(0, Number(input.outstandingInterest || 0)));
+  const maxPayable = money2(outstandingPrincipal + outstandingInterest);
+
+  if (maxPayable <= 0) {
+    throw Object.assign(new Error('This loan has nothing left to pay.'), { status: 400 });
+  }
+
+  if (amount > maxPayable + 0.009) {
+    throw Object.assign(
+      new Error(
+        `Repayment cannot exceed outstanding balance of ₹${maxPayable.toFixed(2)}. You entered ₹${amount.toFixed(2)}.`
+      ),
+      { status: 400 }
+    );
+  }
+
   const type = String(input.type || 'mixed').toLowerCase();
   let principalAmount = 0;
   let interestAmount = 0;
 
   if (type === 'principal') {
-    principalAmount = money2(Math.min(amount, input.outstandingPrincipal));
+    principalAmount = money2(Math.min(amount, outstandingPrincipal));
     if (principalAmount <= 0) {
       throw Object.assign(new Error('No outstanding principal left on this loan.'), { status: 400 });
     }
@@ -59,34 +79,29 @@ export const splitRepayment = (input: {
       throw Object.assign(new Error('Principal repayment exceeds outstanding principal.'), { status: 400 });
     }
   } else if (type === 'interest') {
-    interestAmount = money2(Math.min(amount, input.outstandingInterest || amount));
-    if (interestAmount <= 0 && input.outstandingInterest <= 0) {
-      // Allow recording extra interest paid even if expectedInterest was 0
-      interestAmount = amount;
+    if (outstandingInterest <= 0) {
+      throw Object.assign(new Error('No outstanding interest left on this loan.'), { status: 400 });
+    }
+    interestAmount = money2(Math.min(amount, outstandingInterest));
+  } else if (hasExplicitAmount(input.principalAmount) && hasExplicitAmount(input.interestAmount)) {
+    principalAmount = money2(Math.min(Number(input.principalAmount), outstandingPrincipal));
+    interestAmount = money2(Math.min(Number(input.interestAmount), outstandingInterest));
+    if (money2(principalAmount + interestAmount) !== amount) {
+      throw Object.assign(new Error('Principal + interest must equal repayment amount.'), { status: 400 });
     }
   } else {
-    const explicitPrincipal = input.principalAmount != null ? money2(Number(input.principalAmount)) : null;
-    const explicitInterest = input.interestAmount != null ? money2(Number(input.interestAmount)) : null;
-    if (explicitPrincipal != null || explicitInterest != null) {
-      principalAmount = money2(Math.min(explicitPrincipal ?? 0, input.outstandingPrincipal));
-      interestAmount = money2(explicitInterest ?? Math.max(0, amount - principalAmount));
-      if (money2(principalAmount + interestAmount) !== amount) {
-        throw Object.assign(new Error('Principal + interest must equal repayment amount.'), { status: 400 });
-      }
-    } else {
-      // Default: interest first, then principal
-      interestAmount = money2(Math.min(amount, input.outstandingInterest));
-      principalAmount = money2(Math.min(amount - interestAmount, input.outstandingPrincipal));
-      const leftover = money2(amount - principalAmount - interestAmount);
-      if (leftover > 0) {
-        // Extra beyond expected interest counts as additional interest paid
-        interestAmount = money2(interestAmount + leftover);
-      }
-    }
+    // Default mixed: interest first, then principal — only the entered amount
+    interestAmount = money2(Math.min(amount, outstandingInterest));
+    principalAmount = money2(Math.min(amount - interestAmount, outstandingPrincipal));
+  }
+
+  const applied = money2(principalAmount + interestAmount);
+  if (applied <= 0) {
+    throw Object.assign(new Error('Repayment did not apply to principal or interest.'), { status: 400 });
   }
 
   return {
-    amount,
+    amount: applied,
     principalAmount: money2(principalAmount),
     interestAmount: money2(interestAmount),
     type: type === 'principal' || type === 'interest' ? type : 'mixed'
