@@ -435,13 +435,14 @@ const Pos = () => {
         {suggestOpen && scan.trim().length >= 2 && (
           <div
             ref={suggestRef}
-            className="absolute left-3 right-3 z-30 mt-1 max-h-72 overflow-y-auto rounded-xl border border-slate-300 bg-white py-1 text-slate-900 shadow-xl sm:left-4 sm:right-4"
+            className="absolute left-3 right-3 z-50 mt-1 max-h-72 overflow-y-auto rounded-xl border border-slate-300 py-1 text-slate-900 shadow-2xl sm:left-4 sm:right-4"
+            style={{ backgroundColor: '#ffffff', opacity: 1 }}
           >
             {suggestLoading && (
-              <p className="px-3 py-3 text-sm text-slate-500">Searching…</p>
+              <p className="bg-white px-3 py-3 text-sm text-slate-500">Searching…</p>
             )}
             {!suggestLoading && suggestions.length === 0 && (
-              <p className="px-3 py-3 text-sm text-slate-500">No products match “{scan.trim()}”.</p>
+              <p className="bg-white px-3 py-3 text-sm text-slate-500">No products match “{scan.trim()}”.</p>
             )}
             {!suggestLoading &&
               suggestions.map((row, index) => (
@@ -449,17 +450,18 @@ const Pos = () => {
                   key={row.key}
                   type="button"
                   className={[
-                    'flex w-full flex-col items-start px-3 py-3 text-left text-sm active:bg-cyan-100',
-                    index === activeSuggest ? 'bg-cyan-50' : 'hover:bg-slate-50'
+                    'flex w-full flex-col items-start px-3 py-3 text-left text-sm text-slate-900',
+                    index === activeSuggest ? 'bg-cyan-50' : 'bg-white hover:bg-slate-50 active:bg-cyan-100'
                   ].join(' ')}
+                  style={{ backgroundColor: index === activeSuggest ? '#ecfeff' : '#ffffff' }}
                   onMouseEnter={() => setActiveSuggest(index)}
                   onMouseDown={(event) => {
                     event.preventDefault()
                     pickSuggestion(row)
                   }}
                 >
-                  <span className="font-semibold">{row.label}</span>
-                  <span className="text-xs text-slate-500">{row.description}</span>
+                  <span className="font-semibold text-slate-900">{row.label}</span>
+                  <span className="text-xs text-slate-600">{row.description}</span>
                 </button>
               ))}
           </div>
