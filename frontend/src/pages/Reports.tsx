@@ -50,6 +50,11 @@ const Reports = () => {
       description: 'View all sales transactions with date filtering'
     },
     {
+      title: 'Purchases Report',
+      path: '/reports/purchases',
+      description: 'Purchase totals and supplier spend over time'
+    },
+    {
       title: 'Purchase History',
       path: '/reports/purchase-history',
       description: 'Original purchase costs, never overwritten by later receipts'

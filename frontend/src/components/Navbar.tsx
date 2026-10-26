@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
-  BarChart3,
   Boxes,
   Building2,
   ChevronDown,
   FileClock,
+  HandCoins,
   History,
   LayoutDashboard,
   LogOut,
   Menu,
   MoonStar,
   Package,
+  Percent,
   ScanBarcode,
   Search,
   Receipt,
@@ -21,11 +22,11 @@ import {
   Store,
   SunMedium,
   Tags,
+  TrendingUp,
   Truck,
   UserPlus,
   Users,
   Wallet,
-  HandCoins,
   X
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -87,10 +88,7 @@ const Navbar = () => {
             { to: '/products', label: 'Products', icon: Package },
             { to: '/categories', label: 'Categories', icon: Tags },
             { to: '/stock-adjustments', label: 'Stock Adjustments', icon: SlidersHorizontal },
-            { to: '/stock-history', label: 'Stock History', icon: History },
-            { to: '/inventory', label: 'Stock Value', icon: BarChart3 },
-            { to: '/reports/purchase-history', label: 'Purchase History', icon: Receipt },
-            { to: '/inventory/low-stock', label: 'Low Stock', icon: Boxes }
+            { to: '/stock-history', label: 'Stock History', icon: History }
           ]
         },
         {
@@ -116,15 +114,22 @@ const Navbar = () => {
           ]
         },
         {
-          title: 'Insights',
+          title: 'Reports',
           items: [
-            { to: '/reports', label: 'Reports', icon: BarChart3 },
-            { to: '/audit-logs', label: 'Audit Logs', icon: FileClock }
+            { to: '/reports', label: 'Overview', icon: LayoutDashboard },
+            { to: '/reports/sales', label: 'Sales Report', icon: ShoppingCart },
+            { to: '/reports/purchases', label: 'Purchases Report', icon: Receipt },
+            { to: '/reports/purchase-history', label: 'Purchase History', icon: History },
+            { to: '/reports/inventory', label: 'Inventory Report', icon: Boxes },
+            { to: '/reports/low-stock', label: 'Low Stock', icon: Package },
+            { to: '/reports/profit', label: 'Profit Report', icon: TrendingUp },
+            { to: '/reports/margins', label: 'Margin & Collections', icon: Percent }
           ]
         },
         {
           title: 'System',
           items: [
+            { to: '/audit-logs', label: 'Audit Logs', icon: FileClock },
             { to: '/business-units', label: 'Business Units', icon: Store },
             { to: '/settings', label: 'Settings', icon: Settings }
           ]
@@ -134,11 +139,22 @@ const Navbar = () => {
   const navigationItems = navigationSections.flatMap((section) => section.items)
   const currentItem = [...navigationItems]
     .sort((a, b) => b.to.length - a.to.length)
-    .find((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`))
+    .find((item) => {
+      if (location.pathname === item.to) return true
+      // Exact overview path `/reports` must not match nested `/reports/...`
+      if (item.to === '/reports') return false
+      return location.pathname.startsWith(`${item.to}/`)
+    })
   const currentLabel = currentItem?.label || 'ERP Dashboard'
   const activeSectionTitle =
-    navigationSections.find((section) => section.items.some((item) => item.to === currentItem?.to))?.title ||
-    navigationSections[0]?.title
+    navigationSections.find((section) =>
+      section.items.some(
+        (item) =>
+          item.to === currentItem?.to ||
+          location.pathname === item.to ||
+          (item.to !== '/reports' && location.pathname.startsWith(`${item.to}/`))
+      )
+    )?.title || navigationSections[0]?.title
 
   const [openSection, setOpenSection] = useState<string | null>(activeSectionTitle)
   const [units, setUnits] = useState<Array<{ _id: string; name: string; code: string }>>([])
@@ -411,6 +427,7 @@ const Navbar = () => {
                             <NavLink
                               key={item.to}
                               to={item.to}
+                              end={item.to === '/reports' || item.to === '/dashboard'}
                               onClick={() => setMenuOpen(false)}
                               className={({ isActive }) =>
                                 [
