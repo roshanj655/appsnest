@@ -10,6 +10,7 @@ import { getSaleModel } from './Sale';
 import { getSettingsModel } from './Settings';
 import { getStockAdjustmentModel } from './StockAdjustment';
 import { getSupplierModel } from './Supplier';
+import { getLoanModel } from './Loan';
 
 export const registerTenantModels = (connection: Connection) => {
   getBusinessUnitModel(connection);
@@ -17,6 +18,7 @@ export const registerTenantModels = (connection: Connection) => {
   getCustomerModel(connection);
   getExpenseModel(connection);
   getInventoryTransactionModel(connection);
+  getLoanModel(connection);
   getProductModel(connection);
   getPurchaseModel(connection);
   getSaleModel(connection);

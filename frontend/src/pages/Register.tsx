@@ -48,6 +48,10 @@ const Register = () => {
     else if (!isValidEmail(businessEmail)) errors['reg-business-email'] = emailMsg
     if (!businessPhone.trim()) errors['reg-business-phone'] = requiredMsg('Business phone')
 
+    if (!databaseName.trim()) errors['reg-db-name'] = requiredMsg('Database name')
+    else if (!/^[a-zA-Z0-9_-]+$/.test(databaseName.trim())) {
+      errors['reg-db-name'] = 'Use only letters, numbers, underscore, or hyphen.'
+    }
     if (databaseProvider !== 'atlas' && !connectionString.trim()) {
       errors['reg-connection'] = requiredMsg('Connection string')
     }
@@ -77,8 +81,8 @@ const Register = () => {
           databaseProvider,
           atlasProjectName,
           clusterName,
-          databaseName,
-          connectionString,
+          databaseName: databaseName.trim(),
+          connectionString: connectionString.trim(),
           subscriptionPlan
         },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -230,7 +234,13 @@ const Register = () => {
                       placeholder="Optional"
                     />
                   </FormField>
-                  <FormField id="reg-db-name" label="Database Name" error={fieldErrors['reg-db-name']}>
+                  <FormField
+                    id="reg-db-name"
+                    label="Database Name"
+                    error={fieldErrors['reg-db-name']}
+                    required
+                    hint="This becomes the MongoDB database name (not test)."
+                  >
                     <Input
                       id="reg-db-name"
                       type="text"
@@ -240,7 +250,7 @@ const Register = () => {
                         setDatabaseName(e.target.value)
                         clearFieldError('reg-db-name')
                       }}
-                      placeholder="Optional"
+                      placeholder="e.g. moksh_store"
                     />
                   </FormField>
                   <FormField

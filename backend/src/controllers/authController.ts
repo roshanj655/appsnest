@@ -3,7 +3,7 @@ import { RequestHandler } from 'express';
 import User, { IUser } from '../models/master/User';
 import Business, { IBusiness } from '../models/master/Business';
 import { getTenantConnection } from '../utils/tenantConnection';
-import { initializeTenantDatabase } from '../services/tenantInitializer';
+import { ensureTenantReady, initializeTenantDatabase } from '../services/tenantInitializer';
 import { resolvePermissions } from '../constants/permissions';
 import { getBusinessAccessError } from '../utils/businessAccess';
 
@@ -34,12 +34,30 @@ const buildAuthResponse = (user: IUser, business: IBusiness | null, accessToken:
   refreshToken
 });
 
+/** Keep only Mongo-safe database name characters. */
+const sanitizeDatabaseName = (value: string) =>
+  String(value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+
+/** Swap the DB segment in a Mongo URI so it never stays as master `/test`. */
+const replaceDatabaseInUri = (uri: string, dbName: string): string => {
+  const safe = sanitizeDatabaseName(dbName) || 'tenant';
+  if (/\/\/[^/]+\/([^/?]*)/.test(uri)) {
+    return uri.replace(/(\/\/[^/?]+)\/([^/?]*)/, `$1/${safe}`);
+  }
+  if (uri.includes('?')) {
+    return uri.replace('?', `/${safe}?`);
+  }
+  return `${uri.replace(/\/$/, '')}/${safe}`;
+};
+
 const generateAtlasConnectionString = (dbName: string): string => {
   const masterUri = process.env.MASTER_DATABASE_URI;
   if (!masterUri) throw new Error('MASTER_DATABASE_URI not set');
-  const url = new URL(masterUri);
-  url.pathname = `/${dbName}`;
-  return url.toString();
+  return replaceDatabaseInUri(masterUri, dbName);
 };
 
 export const registerBusiness: RequestHandler = async (req, res) => {
@@ -64,11 +82,20 @@ export const registerBusiness: RequestHandler = async (req, res) => {
     } = req.body;
 
     const tenantId = generateTenantId();
-    const finalDatabaseName = databaseName || `tenant_${tenantId}`;
-    
-    let finalConnectionString = connectionString;
-    if (databaseProvider === 'atlas' && !connectionString) {
-      finalConnectionString = generateAtlasConnectionString(finalDatabaseName);
+    const requestedDbName = sanitizeDatabaseName(String(databaseName || ''));
+    if (!requestedDbName) {
+      return res.status(400).json({ message: 'Database name is required.' });
+    }
+    const finalDatabaseName = requestedDbName;
+
+    // Always bake the form database name into the URI (never keep master `/test`).
+    let finalConnectionString = String(connectionString || '').trim();
+    if (!finalConnectionString || databaseProvider === 'atlas' || !databaseProvider) {
+      finalConnectionString = finalConnectionString
+        ? replaceDatabaseInUri(finalConnectionString, finalDatabaseName)
+        : generateAtlasConnectionString(finalDatabaseName);
+    } else {
+      finalConnectionString = replaceDatabaseInUri(finalConnectionString, finalDatabaseName);
     }
 
     const businessData = {
@@ -135,6 +162,12 @@ export const login: RequestHandler = async (req, res) => {
       const accessError = getBusinessAccessError(business);
       if (accessError) {
         return res.status(403).json({ message: accessError });
+      }
+
+      // Create any missing tenant collections/indexes on first login
+      if (business) {
+        const tenantConnection = await getTenantConnection(business);
+        await ensureTenantReady(tenantConnection, business);
       }
     }
 
