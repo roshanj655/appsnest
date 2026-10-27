@@ -23,7 +23,7 @@ export const BusinessUnitSelect = ({
   value,
   onChange,
   label = 'Business unit',
-  allowUnassigned = true,
+  allowUnassigned = false,
   error,
   required
 }: Props) => {
